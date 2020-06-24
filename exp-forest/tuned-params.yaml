@@ -1,0 +1,17 @@
+padadamp:
+  batch_growth_rate: 0.0020999350113148425,
+  dwell: 500,
+  initial_batch_size: 64,
+  lr: 0.0044576595887146865,
+  max_batch_size: 2048,
+  momentum: 0.8924479261291679,
+  weight_decay: 0.00012906483459130378
+
+geodamp:
+  dampingdelay: 48.66414550165989,
+  dampingfactor: 4.283407572527471,
+  initial_batch_size: 32,
+  lr: 0.004618645820872018,
+  max_batch_size: 256,
+  momentum: 0.7320904056485099,
+  weight_decay: 0.001122178654655193
