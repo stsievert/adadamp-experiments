@@ -1,0 +1,39 @@
+geodamp:
+  cuda: true
+  dampingdelay: 60.0
+  dampingfactor: 5.0
+  dataset: cifar10
+  initial_batch_size: 128
+  lr: 0.1
+  max_batch_size: null
+  model: wideresnet
+  momentum: 0.9
+  nesterov: true
+  verbose: 1
+  weight_decay: 0.0001
+geodamplr:
+  cuda: true
+  dampingdelay: 60.0
+  dampingfactor: 5.0
+  dataset: cifar10
+  initial_batch_size: 128
+  lr: 0.1
+  max_batch_size: null
+  model: wideresnet
+  momentum: 0.9
+  nesterov: true
+  verbose: 1
+  weight_decay: 0.0001
+padadamp:
+  batch_growth_rate: 0.013022
+  cuda: true
+  dataset: cifar10
+  dwell: 10
+  initial_batch_size: 128
+  lr: 0.1
+  max_batch_size: null
+  model: wideresnet
+  momentum: 0.9
+  nesterov: true
+  verbose: 1
+  weight_decay: 0.0001
