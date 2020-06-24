@@ -1,0 +1,3 @@
+[submodule "adadamp"]
+	path = adadamp
+	url = https://github.com/stsievert/adadamp.git
