@@ -8,7 +8,7 @@ import warnings
 import logging
 import torch
 import torch.nn.functional as F
-from copy import copy
+from copy import copy, deepcopy
 from datetime import datetime
 from distributed import Client, as_completed
 from distributed.utils_test import log_errors
@@ -55,16 +55,16 @@ class Damper(CovClassifier):
     def batch_size(self) -> int:
         damping = self.damping()
         self.meta_["damping"] = damping
+        self.meta_["lr_"] = self.lr
 
         # Is the batch size too large? If so, decay the learning rate
         max_bs = self.max_batch_size
-        if max_bs is not None and damping >= max_bs:
+        if max_bs is not None and damping > max_bs:
             self._set_lr(self.lr * max_bs / damping)
             self.meta_["batch_size"] = max_bs
             self.meta_["lr_"] = self.lr * max_bs / damping
             return max_bs
 
-        self.meta_["lr_"] = self.lr
         self.meta_["batch_size"] = damping
         return damping
 
@@ -140,7 +140,7 @@ class Damper(CovClassifier):
         test_acc = correct / n_eg
         d = {f"{prefix}acc": test_acc, f"{prefix}loss": test_loss}
         self.meta_.update(d)
-        self.history_.append(copy(self.meta_))
+        self.history_.append(deepcopy(self.meta_))
         if return_dict:
             return d
         factor = -1 if self.scoring == "loss" else 1
@@ -294,8 +294,31 @@ class HSGD(Damper):
             factor = _ceil(self.batch_growth_rate * mu)
             bs = b0 + factor ** 2
             self.meta_["pada_damping"] = int(bs)
-
         return self.meta_["pada_damping"]
+
+#     @property
+#     def batch_size(self) -> int:
+#         damping = self.damping()
+#         self.meta_["damping"] = damping
+#         self.meta_["lr_"] = self.lr
+#         self.meta_["batch_size"] = damping
+
+#         # Is the batch size too large? If so, decay the learning rate
+#         # bs: 2, 4, 6, 8, 10, ... = 2 * k
+#         # lr = 1/2, 1/4, 1/6, 1/8, 1/10 = 1 / (2 * k)
+#         max_bs = self.max_batch_size
+#         if max_bs is not None and damping >= max_bs:
+#             mu = copy(self.meta_["model_updates"])
+#             if not hasattr(self, "_initial_decay_factor"):
+#                 self._mbs_idx = copy(mu)
+#             rate = copy(self.batch_growth_rate)
+#             min_mu = copy(self._mbs_idx)
+#             lr = self.lr * min_mu / (min_mu + rate * (mu - min_mu))
+#             self._set_lr(lr)
+#             self.meta_["lr_"] = lr
+#             self.meta_["batch_size"] = max_bs
+
+#         return self.meta_["batch_size"]
 
 
 class PadaDampLR(PadaDamp):
