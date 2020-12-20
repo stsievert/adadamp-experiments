@@ -68,8 +68,10 @@ class wide_basic(nn.Module):
         return out
 
 class Wide_ResNet(nn.Module):
+
     def __init__(self, depth, widen_factor, dropout_rate, num_classes):
-        super(Wide_ResNet, self).__init__()
+        # example from https://pytorch.org/docs/stable/generated/torch.nn.Module.html: super(Model, self).__init__()
+        super().__init__()
         self.in_planes = 16
 
         assert ((depth-4)%6 ==0), 'Wide-resnet depth should be 6n+4'
