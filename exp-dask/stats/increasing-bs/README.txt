@@ -1,0 +1,6 @@
+Ran on following schedule:
+
+EPOCH 0: LR 0.05, BS 128
+EPOCH 60: LR 0.05, BS 640
+EPOCH 120: LR 0.05, BS 3200
+EPOCH 180: LR 0.05, BS 16000
