@@ -1,0 +1,1 @@
+This experiment was ran with GRAD_TIME_128, DEEPCOPY_TIME, SCORE_TIME all equal to 0
