@@ -4,6 +4,7 @@ orig_bs = 128
 # exp
 exp_lr = orig_lr * 2
 exp_bs = orig_bs * 2
+exp_momentum = 0.9
 # damping sched
 dampings = {
     0:   exp_bs,
