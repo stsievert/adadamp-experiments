@@ -47,8 +47,7 @@ class DaskClassifierSimulator(DaskClassifierExpiriments):
         Sets simulation data for next epoch
         """
         self._sim_data = dic
-        self.set_lr(dic["partial_fit__lr"])
-        self.set_bs(dic["partial_fit__batch_size"])
+        self.set_damping(dic["partial_fit__batch_size"])
 
     def _get_gradients(
         self,
