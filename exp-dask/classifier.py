@@ -42,6 +42,16 @@ class DaskClassifierExpiriments(DaskClassifier):
         return self._batch_size
 
 class DaskClassifierSimulator(DaskClassifierExpiriments):
+    
+    def set_times(self, score_time, deepcopy_time, grad_time_128):
+        global SCORE_TIME
+        global DEEPCOPY_TIME
+        global GRAD_TIME_128
+        
+        SCORE_TIME = score_time
+        DEEPCOPY_TIME = deepcopy_time
+        GRAD_TIME_128 = grad_time_128
+    
     def set_sim(self, dic):
         """
         Sets simulation data for next epoch
