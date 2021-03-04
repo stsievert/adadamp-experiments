@@ -32,22 +32,22 @@ Grads = NewType("Grads", Dict[str, Union[torch.Tensor, float, int]])
 SCORE_TIME = 0.0  # 5.39407711148262
 DEEPCOPY_TIME = 0.0  # 0.05855  # seconds
 GRAD_TIME_128 = 0.0  # 0.07832  # seconds
+MUTIPLE_MACHINES = False
 
 
 class DaskClassifierExpiriments(DaskClassifier):
     def set_damping(self, bs: int):
-        self._batch_size = bs
-
-    def batch_size_(self) -> int:
-        return self._batch_size
+        self.damping_ = bs
 
 class DaskClassifierSimulator(DaskClassifierExpiriments):
     
-    def set_times(self, score_time, deepcopy_time, grad_time_128):
+    def set_times(self, mult, score_time, deepcopy_time, grad_time_128):
+        global MULTIPLE_MACHINES
         global SCORE_TIME
         global DEEPCOPY_TIME
         global GRAD_TIME_128
         
+        MULTIPLE_MACHINES = mult
         SCORE_TIME = score_time
         DEEPCOPY_TIME = deepcopy_time
         GRAD_TIME_128 = grad_time_128
@@ -116,9 +116,11 @@ class DaskClassifierSimulator(DaskClassifierExpiriments):
         # Distribute the computation of the gradient. In practice this will
         # mean (say) 4 GPUs to accelerate the gradient computation. Right now
         # for ease it's a small network that doesn't need much acceleration.
-
+        deep_time = DEEPCOPY_TIME
+        if MUTIPLE_MACHINES:
+            deep_time = deep_time * 2 * np.log2(self._sim_data['n_workers'])
         grads = [
-            client.submit(sim_gradient, 0, model_opt, dataset, device=device, idx=idx)
+            client.submit(sim_gradient, deep_time, model_opt, dataset, device=device, idx=idx)
             for idx in worker_idxs
         ]
 
@@ -148,7 +150,7 @@ def _randomize(x: torch.Tensor):
 
 
 def sim_gradient(
-    timing,
+    deep_time,
     model_opt: Tuple[Model, Optimizer],
     train_set,
     *,
@@ -157,7 +159,7 @@ def sim_gradient(
     max_bs: int = 1024,
 ) -> Grads:
 
-    sleep(DEEPCOPY_TIME)
+    sleep(deep_time)
     sleep(GRAD_TIME_128 * len(idx) / 128)
 
     model = model_opt[0]
