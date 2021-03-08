@@ -116,9 +116,11 @@ class DaskClassifierSimulator(DaskClassifierExpiriments):
         # Distribute the computation of the gradient. In practice this will
         # mean (say) 4 GPUs to accelerate the gradient computation. Right now
         # for ease it's a small network that doesn't need much acceleration.
-        deep_time = DEEPCOPY_TIME
+        deep_time = DEEPCOPY_TIME # 0.05855
         if MUTIPLE_MACHINES:
-            deep_time = deep_time * 2 * np.log2(self._sim_data['n_workers'])
+            # DEEPCOPY_TIME = 1.55e-3 * np.log2(P)
+            deep_time = 1.55 * (10**-3) * np.log2(self._sim_data['n_workers'])
+            
         grads = [
             client.submit(sim_gradient, deep_time, model_opt, dataset, device=device, idx=idx)
             for idx in worker_idxs
