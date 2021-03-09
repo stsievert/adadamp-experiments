@@ -32,7 +32,6 @@ Grads = NewType("Grads", Dict[str, Union[torch.Tensor, float, int]])
 SCORE_TIME = 0.0  # 5.39407711148262
 DEEPCOPY_TIME = 0.0  # 0.05855  # seconds
 GRAD_TIME_128 = 0.0  # 0.07832  # seconds
-MUTIPLE_MACHINES = False
 
 
 class DaskClassifierExpiriments(DaskClassifier):
@@ -42,12 +41,12 @@ class DaskClassifierExpiriments(DaskClassifier):
 class DaskClassifierSimulator(DaskClassifierExpiriments):
     
     def set_times(self, mult, score_time, deepcopy_time, grad_time_128):
-        global MULTIPLE_MACHINES
         global SCORE_TIME
         global DEEPCOPY_TIME
         global GRAD_TIME_128
         
-        MULTIPLE_MACHINES = mult
+        self.mult_machines_ = mult
+        
         SCORE_TIME = score_time
         DEEPCOPY_TIME = deepcopy_time
         GRAD_TIME_128 = grad_time_128
@@ -117,7 +116,7 @@ class DaskClassifierSimulator(DaskClassifierExpiriments):
         # mean (say) 4 GPUs to accelerate the gradient computation. Right now
         # for ease it's a small network that doesn't need much acceleration.
         deep_time = DEEPCOPY_TIME # 0.05855
-        if MUTIPLE_MACHINES:
+        if self.mult_machines_ == True:
             # DEEPCOPY_TIME = 1.55e-3 * np.log2(P)
             deep_time = 1.55 * (10**-3) * np.log2(self._sim_data['n_workers'])
             
