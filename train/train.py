@@ -26,7 +26,7 @@ from torch.optim.lr_scheduler import StepLR
 from sklearn.model_selection import ParameterSampler
 from torchvision.transforms import Compose
 import torchvision.transforms as transforms
-from torchvision.datasets import FashionMNIST, CIFAR10
+from torchvision.datasets import FashionMNIST, CIFAR10, MNIST
 import torchvision.models as models
 import torch.utils.data
 
@@ -134,7 +134,7 @@ def _set_seed(seed):
 
 
 def main(
-    dataset: str = "fashionmnist",
+    dataset: str = "mnist",
     initial_batch_size: int = 64,
     epochs: int = 6,
     verbose: Union[int, bool] = False,
@@ -209,13 +209,20 @@ def main(
         transforms.Normalize(mean=(0.1307,), std=(0.3081,)),
     ]
     transform_test = [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
-    assert dataset in ["fashionmnist", "cifar10", "synthetic"]
+    assert dataset in ["fashionmnist", "cifar10", "synthetic", "mnist"]
     if dataset == "fashionmnist":
         _dir = "_traindata/fashionmnist/"
         train_set = FashionMNIST(
             _dir, train=True, transform=Compose(transform_train), download=True,
         )
         test_set = FashionMNIST(_dir, train=False, transform=Compose(transform_test))
+        model = Net()
+    elif dataset == "mnist":
+        _dir = "_traindata/mnist/"
+        train_set = MNIST(
+            _dir, train=True, transform=Compose(transform_train), download=True,
+        )
+        test_set = MNIST(_dir, train=False, transform=Compose(transform_test))
         model = Net()
     elif dataset == "cifar10":
         transform_train = [
@@ -247,7 +254,7 @@ def main(
         model = LinearNet(data_kwargs["d"])
     else:
         raise ValueError(
-            f"dataset={dataset} not in ['fashionmnist', 'cifar10', 'synth']"
+            f"dataset={dataset} not in ['fashionmnist', 'cifar10', 'synth', 'mnist']"
         )
     if tuning:
         train_size = int(0.8 * len(train_set))
@@ -453,7 +460,7 @@ def _test(**kwds):
 
 if __name__ == "__main__":
     r = main(
-        dataset="fashionmnist",
+        dataset="mnist",
         initial_batch_size=2048,
         epochs=4,
         verbose=5000,
