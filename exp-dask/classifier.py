@@ -1,25 +1,15 @@
+#  
+#  Simulation models for DaskClassifier
+#
+import dask
+import numpy as np
+import torch
+from torch.optim import Optimizer
+from time import sleep, time
 from copy import copy, deepcopy
 from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Union, Tuple, NewType
-from warnings import warn
-
-import dask
-import dask.array as da
-import numpy as np
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
-import random
-from torch.optim import Optimizer
-from time import sleep, time
-from distributed import get_client
-from sklearn.base import BaseEstimator
-from sklearn.utils import check_random_state
-
-from torch.autograd import Variable
 from torch.utils.data import Dataset, IterableDataset, TensorDataset, DataLoader
-
 from adadamp.adadamp import DaskClassifier
 
 IntArray = Union[List[int], np.ndarray, torch.Tensor]
@@ -28,25 +18,52 @@ Model = NewType("Model", torch.nn.Module)
 Grads = NewType("Grads", Dict[str, Union[torch.Tensor, float, int]])
 
 
-
-class DaskClassifierExpiriments(DaskClassifier):
-    def set_damping(self, bs: int):
-        self.damping_ = bs
-
-class DaskClassifierSimulator(DaskClassifierExpiriments):
+class DaskClassifierSimulator(DaskClassifier):
+    """
+    Replaces gradient calculation and scoring functions sleep() functions
+    to simulate training scenarios
+    """
     
-    def set_times(self, mult, score_time, deepcopy_time, grad_time_128): 
-        self.mult_machines_ = mult
+    
+    def set_times(self, multiple_workers, score_time, deepcopy_time, grad_time_128): 
+        """
+        Sets the timings for various aspects of the model
+        
+        Parameters
+        ----------
+        multiple_workers : boolean
+            Determines is simulator will add additional overhead when simulating
+            multiple workers
+        score_time : float
+            Length of time in seconds the score function should take
+        deepcopy_time : float
+            Length of time in seconds to spend deepcopying the model to workers
+        grad_time_128 : float
+            Length of time in seconds to spend per 128 gradiant calculations
+        """
+        self.mult_machines_ = multiple_workers
         self.score_time = score_time
         self.deepcopy_time = deepcopy_time
         self.grad_time_128 = grad_time_128
     
     def set_sim(self, dic):
         """
-        Sets simulation data for next epoch
+        Set the data the simulator should use for batchsize and other parameters
+        
+        Parameters
+        ----------
+        dic : dictionary
+            Statistics dictionary matching DaskClassifier .meta_ dictionaries
+        
         """
         self._sim_data = dic
         self.set_damping(dic["partial_fit__batch_size"])
+        
+    def set_damping(self, bs: int):
+        """
+        Set batch size for the simulator
+        """
+        self.damping_ = bs
 
     def _get_gradients(
         self,
@@ -62,14 +79,8 @@ class DaskClassifierSimulator(DaskClassifierExpiriments):
         device,
     ):
         """
-        Calculates the gradients at a given state. This function is
-        mainly in charge of sending the gradient calculation off to the
-        dask workers, the hard work is done in _dist.gradient()
-
-        Note:
-        - In this implementation, each worker manually grabs the data
-          and caches it themselves. This is a work around for a dask bug
-        - See the doc string of _get_fashionminst in _dist.py for more info
+        Simulates the calculation of gradients for DaskClassifier. Sleeps rather than
+        doing actual calculations.
 
         Parameters
         ----------
@@ -94,8 +105,6 @@ class DaskClassifierSimulator(DaskClassifierExpiriments):
 
         """
         # Iterate through the dataset in batches
-        # TODO: integrate with IterableDataset (this is pretty much already
-        # an IterableDataset but without vectorization)
         idx = self.random_state_.choice(
             len_dataset, size=min(batch_size, len_dataset), replace=False
         )
@@ -118,7 +127,7 @@ class DaskClassifierSimulator(DaskClassifierExpiriments):
         return grads
 
     def score(self, X, y=None):
-
+        
         # sleep
         sleep(self.score_time)
 
@@ -149,6 +158,11 @@ def sim_gradient(
     idx: IntArray,
     max_bs: int = 1024,
 ) -> Grads:
+    """
+    Simulates calculating gradients by sleeping for the time
+    it would take to deepcopy the model to a worker and for 
+    the time it would theoretically take to compute the gradients
+    """
 
     sleep(deep_time)
     sleep(grad_time * len(idx) / 128)
