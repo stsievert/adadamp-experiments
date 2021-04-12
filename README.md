@@ -20,8 +20,10 @@ the figures.
 By default, these experiments will be assumed to have the Adadamp's conda environment. To activate this environment, run this code:
 
 ``` shell
-$ cd adadamp
+$ git clone --recursive https://github.com/stsievert/adadamp-experiments.git
+$ cd adadamp-experiments/adadamp
 $ conda env create -f adadamp.yaml
+$ pip install -e .
 $ cd ..
 ```
 
