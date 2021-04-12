@@ -20,7 +20,8 @@ DIR = Path(__file__).absolute().parent
 sys.path.append(str(DIR.parent))
 
 import train
-
+from inspect import getmembers, isfunction
+print(getmembers(train, isfunction))
 
 def _write(data: List[Dict[str, Any]], filename: str) -> bool:
     df = pd.DataFrame(data)
@@ -72,25 +73,26 @@ if __name__ == "__main__":
     if cont.lower() == "n":
         sys.exit(1)
 
-    client = Client("localhost:8786") #TODO - throwing error
+    client = Client()
 
-    def submit(seed, **kwargs):
+    def submit(seed):
         import train
-        assert train.__version__ == "0.1"
+        #assert train.__version__ == "0.1"
 
         import adadamp
-        assert adadamp.__version__ == "0.1.4"
+        #assert adadamp.__version__ == "0.1.4"
 
-        return train.main(epochs=epochs, verbose=False, seed=seed, tuning=False, **kwargs)
+        return train.main(epochs=epochs, verbose=False, init_seed=1000, tuning=False)
 
     futures = []
     seeds = np.arange(seed_start, seed_start + n_runs)
     dampers = ["adadamp", "padadamp", "geodamp", "adagrad", "geodamplr"]
-    assert set(dampers) == set(params.keys())
+    # assert set(dampers) == set(params.keys())
+    # breakpoint()
 
     for damper in dampers:
         kwargs = params[damper]
-        futures.extend(client.map(submit, seeds, **kwargs))
+        futures.extend(map(submit, seeds))
 
     for future in as_completed(futures):
         try:

@@ -39,10 +39,7 @@ from adadamp import (
     CntsDampLR,
     GradientDescent,
 )
-
-import sys
-from pathlib import Path
-
+#from adadamp.utils import _get_resnet18
 import adadamp.experiment as experiment
 from .wideresnet import WideResNet
 
@@ -128,12 +125,11 @@ def ident(args: dict) -> str:
 
 
 def _set_seed(seed):
-    mseed = 1000
-    torch.manual_seed(mseed)
+    torch.manual_seed(seed)
     if torch.cuda.is_available():
-        torch.cuda.manual_seed(mseed)
-    np.random.seed(mseed)
-    random.seed(mseed)
+        torch.cuda.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
     return True
 
 
@@ -163,9 +159,8 @@ def main(
     weight_decay: float=0,
 ) -> Tuple[List[Dict], List[Dict]]:
     # Get (tuning, random_state, init_seed)
-    # print(random_state)
     assert int(tuning) or isinstance(tuning, bool)
-    # assert isinstance(random_state, int)
+    assert isinstance(random_state, int)
     assert isinstance(init_seed, int)
 
     if "NUM_THREADS" in os.environ:
@@ -250,7 +245,7 @@ def main(
         if model == "wideresnet":
             model = WideResNet(16, 4, 0.3, 10)
         else:
-            model = experiment._get_resnet18()
+            model = _get_resnet18()
     elif dataset == "synthetic":
         data_kwargs = {"n": 10_000, "d": 100}
         args.update(data_kwargs)
