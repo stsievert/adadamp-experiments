@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 from pprint import pprint
@@ -20,8 +21,7 @@ DIR = Path(__file__).absolute().parent
 sys.path.append(str(DIR.parent))
 
 import train
-from inspect import getmembers, isfunction
-print(getmembers(train, isfunction))
+print(os.path.abspath(train.__file__))
 
 def _write(data: List[Dict[str, Any]], filename: str) -> bool:
     df = pd.DataFrame(data)
@@ -41,7 +41,13 @@ def _get_unique(series: pd.Series) -> Any:
 if __name__ == "__main__":
 
     DATA_DIR = (
-        Path("./_data")
+        Path("/mnt")
+        / "ws"
+        / "home"
+        / "sshah"
+        / "adadamp-experiments"
+        / "exp-mnist"
+        / "_data"
         / datetime.now().isoformat()[:10]
     )
     if not DATA_DIR.exists():
@@ -75,8 +81,9 @@ if __name__ == "__main__":
 
     client = Client()
 
-    def submit(seed):
+    def submit(seed, **kwargs):
         import train
+        print(os.path.abspath(train.__file__))
         #assert train.__version__ == "0.1"
 
         import adadamp
@@ -87,14 +94,13 @@ if __name__ == "__main__":
     futures = []
     seeds = np.arange(seed_start, seed_start + n_runs)
     dampers = ["adadamp", "padadamp", "geodamp", "adagrad", "geodamplr"]
-    # assert set(dampers) == set(params.keys())
-    # breakpoint()
+    assert set(dampers) == set(params.keys())
 
     for damper in dampers:
         kwargs = params[damper]
         futures.extend(map(submit, seeds))
 
-    for future in as_completed(futures):
+    for future in futures:
         try:
             data, train_data = future.result()
             #  data, train_data = future

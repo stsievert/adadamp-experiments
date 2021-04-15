@@ -39,10 +39,7 @@ from adadamp import (
     CntsDampLR,
     GradientDescent,
 )
-
-import sys
-from pathlib import Path
-
+from adadamp.utils import _get_resnet18
 import adadamp.experiment as experiment
 from .wideresnet import WideResNet
 
@@ -163,9 +160,8 @@ def main(
     weight_decay: float=0,
 ) -> Tuple[List[Dict], List[Dict]]:
     # Get (tuning, random_state, init_seed)
-    # print(random_state)
     assert int(tuning) or isinstance(tuning, bool)
-    # assert isinstance(random_state, int)
+    #assert isinstance(random_state, int)
     assert isinstance(init_seed, int)
 
     if "NUM_THREADS" in os.environ:
@@ -222,7 +218,7 @@ def main(
         )
         test_set = FashionMNIST(_dir, train=False, transform=Compose(transform_test))
         model = Net()
-    elif dataset == "mnist":
+    if dataset == "mnist":
         _dir = "_traindata/mnist/"
         train_set = MNIST(
             _dir, train=True, transform=Compose(transform_train), download=True,
@@ -250,7 +246,7 @@ def main(
         if model == "wideresnet":
             model = WideResNet(16, 4, 0.3, 10)
         else:
-            model = experiment._get_resnet18()
+            model = _get_resnet18()
     elif dataset == "synthetic":
         data_kwargs = {"n": 10_000, "d": 100}
         args.update(data_kwargs)
