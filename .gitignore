@@ -137,3 +137,7 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
+# Project stuff
+exp-dask/data/*
+dask-worker-space/*
+
