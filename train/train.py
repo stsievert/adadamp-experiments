@@ -10,6 +10,7 @@ from datetime import datetime
 import random
 from time import time
 import os
+import sys
 
 import numpy.linalg as LA
 
@@ -29,6 +30,8 @@ import torchvision.transforms as transforms
 from torchvision.datasets import FashionMNIST, CIFAR10, MNIST
 import torchvision.models as models
 import torch.utils.data
+
+print(sys.path)
 
 from adadamp import (
     AdaDamp,
@@ -125,17 +128,17 @@ def ident(args: dict) -> str:
 
 
 def _set_seed(seed):
-    mseed = 1000
-    torch.manual_seed(mseed)
+    seed = int(seed)
+    torch.manual_seed(seed)
     if torch.cuda.is_available():
-        torch.cuda.manual_seed(mseed)
-    np.random.seed(mseed)
-    random.seed(mseed)
+        torch.cuda.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
     return True
 
 
 def main(
-    dataset: str = "mnist",
+    dataset: str = "fashionmnist",
     initial_batch_size: int = 64,
     epochs: int = 6,
     verbose: Union[int, bool] = False,
@@ -161,8 +164,8 @@ def main(
 ) -> Tuple[List[Dict], List[Dict]]:
     # Get (tuning, random_state, init_seed)
     assert int(tuning) or isinstance(tuning, bool)
-    #assert isinstance(random_state, int)
-    assert isinstance(init_seed, int)
+    assert isinstance(random_state, (int,np.integer))
+    assert isinstance(init_seed, (int,np.integer))
 
     if "NUM_THREADS" in os.environ:
         v = os.environ["NUM_THREADS"]
@@ -218,7 +221,7 @@ def main(
         )
         test_set = FashionMNIST(_dir, train=False, transform=Compose(transform_test))
         model = Net()
-    if dataset == "mnist":
+    elif dataset == "mnist":
         _dir = "_traindata/mnist/"
         train_set = MNIST(
             _dir, train=True, transform=Compose(transform_train), download=True,
@@ -461,7 +464,7 @@ def _test(**kwds):
 
 if __name__ == "__main__":
     r = main(
-        dataset="mnist",
+        dataset="fashionmnist",
         initial_batch_size=2048,
         epochs=4,
         verbose=5000,
