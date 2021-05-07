@@ -21,13 +21,11 @@ DIR = Path(__file__).absolute().parent
 sys.path.append(str(DIR.parent))
 
 import train
-print(os.path.abspath(train.__file__))
 
 def _write(data: List[Dict[str, Any]], filename: str) -> bool:
     df = pd.DataFrame(data)
     df.to_parquet(filename, index=False)
     return True
-
 
 def _dummy(**kwargs):
     return [{"time": time(), **kwargs}], [{"train": True}]
@@ -62,7 +60,7 @@ if __name__ == "__main__":
     if x.lower() == "n":
         sys.exit(1)
 
-    epochs = 5
+    epochs = 200
     n_runs = 1
     seed_start = 1000
 
@@ -73,11 +71,10 @@ if __name__ == "__main__":
         and pd.read_parquet(f).epochs.max() >= epochs - 5
     ]
 
-    with open("tuned-hyperparameters.json", "r") as f:
+    with open("hyperparams.json", "r") as f:
         params = json.load(f)
-    params["padadamp"] = {"dwell": 10, "batch_growth_rate": 0.015, "lr": 0.01, "initial_batch_size": 256}
-    for param in params.values():
-        param["weight_decay"] = 1e-5
+    for damp, param in params.items():
+        param["damper"] = damp
 
     print("n_runs =", n_runs)
     cont = input("Ok? y/n : ")
@@ -88,7 +85,6 @@ if __name__ == "__main__":
 
     def submit(seed, **kwargs):
         import train
-        print(os.path.abspath(train.__file__))
         #assert train.__version__ == "0.1"
 
         import adadamp
@@ -98,7 +94,7 @@ if __name__ == "__main__":
 
     futures = []
     seeds = np.arange(seed_start, seed_start + n_runs)
-    dampers = ["geodamp", "adagrad", "geodamplr"]
+    dampers = ["geodamp", "adagrad", "geodamplr", "radadamp"]
     assert set(dampers).issubset(set(params.keys()))
 
     for damper in dampers:

@@ -31,12 +31,11 @@ from torchvision.datasets import FashionMNIST, CIFAR10, MNIST
 import torchvision.models as models
 import torch.utils.data
 
-print(sys.path)
-
 from adadamp import (
     AdaDamp,
     GeoDamp,
     PadaDamp,
+    RadaDamp,
     BaseDamper,
     GeoDampLR,
     CntsDampLR,
@@ -163,7 +162,7 @@ def main(
     weight_decay: float=0,
 ) -> Tuple[List[Dict], List[Dict]]:
     # Get (tuning, random_state, init_seed)
-    assert int(tuning) or isinstance(tuning, bool)
+    assert isinstance(tuning, (bool, int))
     assert isinstance(random_state, (int,np.integer))
     assert isinstance(init_seed, (int,np.integer))
 
@@ -329,6 +328,8 @@ def main(
             dampingfactor=args["dampingfactor"],
             **opt_kwargs,
         )
+    elif args["damper"].lower() == "radadamp":
+        opt = RadaDamp(*opt_args, **opt_kwargs)
     elif args["damper"].lower() == "geodamplr":
         opt = GeoDampLR(
             *opt_args,

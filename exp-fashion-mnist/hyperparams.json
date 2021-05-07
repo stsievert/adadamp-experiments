@@ -6,6 +6,7 @@
         "initial_batch_size": 64,
         "lr": 0.0173887882,
         "weight_decay": 0.0001,
+        "nesterov": 1,
         "momentum": 0.9
     },
     "radadamp": {
@@ -13,6 +14,7 @@
         "max_batch_size": 4096,
         "lr": 0.0173887882,
         "weight_decay": 0.0001,
+        "nesterov": 1,
         "momentum": 0.9
     },
     "adagrad": {
@@ -26,6 +28,7 @@
         "initial_batch_size": 64,
         "lr": 0.0173887882,
         "weight_decay": 0.0001,
+        "nesterov": 1,
         "momentum": 0.9
     }
 }
