@@ -1,6 +1,6 @@
 {
     "geodamp": {
-        "dampingfactor": 5,
+        "dampingfactor": 2.5,
         "dampingdelay": 6,
         "max_batch_size": 4096,
         "initial_batch_size": 64,
@@ -10,9 +10,9 @@
         "momentum": 0.9
     },
     "radadamp": {
-        "initial_batch_size": 64,
-        "max_batch_size": 2048,
-        "lr": 0.0173887882,
+        "initial_batch_size": 32,
+        "max_batch_size": 512,
+        "lr": 0.0085,
         "weight_decay": 0.0003,
         "nesterov": 1,
         "momentum": 0.9
