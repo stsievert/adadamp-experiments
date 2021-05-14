@@ -31,6 +31,8 @@ from torchvision.datasets import FashionMNIST, CIFAR10, MNIST
 import torchvision.models as models
 import torch.utils.data
 
+torch.set_num_threads(1)
+
 from adadamp import (
     AdaDamp,
     GeoDamp,

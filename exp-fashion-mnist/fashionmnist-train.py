@@ -24,7 +24,7 @@ import train
 
 def _write(data: List[Dict[str, Any]], filename: str) -> bool:
     df = pd.DataFrame(data)
-    df.to_parquet(filename, index=False)
+    df.to_csv(filename, index=False)
     return True
 
 def _dummy(**kwargs):
@@ -88,9 +88,9 @@ if __name__ == "__main__":
         #assert train.__version__ == "0.1"
 
         import adadamp
-        #assert adadamp.__version__ == "0.1.4"
+        assert adadamp.__version__ == "0.2.0rc2"
 
-        return train.main(epochs=epochs, verbose=False, init_seed=seed, random_state=seed, tuning=False, **kwargs)
+        return train.main(epochs=epochs, verbose=5, init_seed=seed, random_state=seed, tuning=True, **kwargs)
 
     futures = []
     seeds = np.arange(seed_start, seed_start + n_runs)
@@ -114,5 +114,5 @@ if __name__ == "__main__":
                 print(info)
         else:
             print(f"writing training {k}")
-            _write(data, str(DATA_DIR / f"{k}-test.parquet"))
-            _write(train_data, str(DATA_DIR / f"{k}-train.parquet"))
+            _write(data, str(DATA_DIR / f"{k}-test.csv.zip"))
+            _write(train_data, str(DATA_DIR / f"{k}-train.csv.zip"))
