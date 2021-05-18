@@ -93,7 +93,7 @@ if __name__ == "__main__":
     if cont.lower() == "n":
         sys.exit(1)
 
-    cluster = LocalCluster(n_workers=60, threads_per_worker=1, processes=True)
+    cluster = LocalCluster(n_workers=66, threads_per_worker=1, processes=True)
     client = Client(cluster)
 
     def _prep():
