@@ -1,4 +1,7 @@
 from __future__ import print_function
+import os
+for key in ["OMP_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "OPENBLAS_NUM_THREADS"]:
+    os.environ[key] = "1"
 from types import SimpleNamespace
 from typing import Any, Dict, List, Union, Optional, Tuple
 import hashlib
@@ -168,11 +171,7 @@ def main(
     assert isinstance(random_state, (int,np.integer,np.int64))
     assert isinstance(init_seed, (int,np.integer,np.int64))
 
-    if "NUM_THREADS" in os.environ:
-        v = os.environ["NUM_THREADS"]
-        if v:
-            print(f"NUM_THREADS={v} (int(v)={int(v)})")
-            torch.set_num_threads(int(v))
+    torch.set_num_threads(1)
 
     args: Dict[str, Any] = {
         "initial_batch_size": initial_batch_size,
