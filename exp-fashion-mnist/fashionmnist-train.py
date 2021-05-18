@@ -88,9 +88,9 @@ if __name__ == "__main__":
         #assert train.__version__ == "0.1"
 
         import adadamp
-        assert adadamp.__version__ == "0.2.0rc2"
+        assert adadamp.__version__ == "0.2.0rc4"
 
-        return train.main(epochs=epochs, verbose=5, init_seed=seed, random_state=seed, tuning=True, **kwargs)
+        return train.main(epochs=epochs, verbose=False, init_seed=seed, random_state=seed, tuning=True, **kwargs)
 
     futures = []
     seeds = np.arange(seed_start, seed_start + n_runs)

@@ -165,8 +165,8 @@ def main(
 ) -> Tuple[List[Dict], List[Dict]]:
     # Get (tuning, random_state, init_seed)
     assert isinstance(tuning, (bool, int))
-    assert isinstance(random_state, (int,np.integer))
-    assert isinstance(init_seed, (int,np.integer))
+    assert isinstance(random_state, (int,np.integer,np.int64))
+    assert isinstance(init_seed, (int,np.integer,np.int64))
 
     if "NUM_THREADS" in os.environ:
         v = os.environ["NUM_THREADS"]
@@ -295,6 +295,7 @@ def main(
         optimizer = optim.Adadelta(model.parameters(), rho=rho)
     else:
         if not args["nesterov"]:
+            print("Use nesterov momentum")
             assert args["momentum"] == 0
         optimizer = optim.SGD(model.parameters(), lr=args["lr"], nesterov=args["nesterov"], momentum=args["momentum"], weight_decay=args["weight_decay"])
     n_data = len(train_set)
