@@ -129,16 +129,26 @@ if __name__ == "__main__":
     #  assert set(dampers).issubset(set(params.keys()))
 
     param_dist = {
-        "lr": [0.006],
+        "lr": [0.005],
         "momentum": [0.9],
-        "dampingfactor": np.logspace(0, 1, num=10),
+        "nesterov": [True],
+        "rho": [0.95, 0.99, 0.995, 0.999],
+        "dampingfactor": np.logspace(0, 1, num=1000),
         "dampingdelay": [2, 5, 10, 20, 30, 60],
-        "initial_batch_size": [32, 64, 128, 256],
+        "initial_batch_size": [16, 32, 64, 128, 256],
         "max_batch_size": [256, 512, 1024, 4096],
         "weight_decay": [3e-3, 1e-3, 3e-4, 1e-4],
+        "dwell": [1, 10, 100, 300, 1000, 3000],
+    }
+    n_iters = {
+        "radadamp": 30,
+        "geodamp": 30,
+        "adagrad": 6,
     }
     for damper in dampers:
-        damper_params = ParameterSampler(param_dist, n_iter=15)
+        if damper not in n_iters:
+            continue
+        damper_params = ParameterSampler(param_dist, n_iter=n_iters[damper])
         for params in damper_params:
             futures.extend(client.map(submit, seeds, damper=damper, **params))
 
