@@ -104,6 +104,8 @@ if __name__ == "__main__":
         return True
 
     client.run(_prep)
+    client.upload_file("wideresnet.py")
+    client.upload_file("train.py")
 
     def submit(seed, **kwargs):
         import train
