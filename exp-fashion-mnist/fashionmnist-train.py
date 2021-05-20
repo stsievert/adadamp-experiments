@@ -33,8 +33,8 @@ from distributed import Client, as_completed, LocalCluster
 from distributed.scheduler import KilledWorker
 from sklearn.model_selection import ParameterSampler
 
-DIR = Path(__file__).absolute().parent
-sys.path.append(str(DIR.parent))
+# DIR = Path(__file__).absolute().parent
+# sys.path.append(str(DIR.parent))
 
 import train
 
@@ -57,12 +57,6 @@ def _get_unique(series: pd.Series) -> Any:
 if __name__ == "__main__":
 
     DATA_DIR = (
-        #  Path("/mnt")
-        #  / "ws"
-        #  / "home"
-        #  / "sshah"
-        #  / "adadamp-experiments"
-        #  / "exp-fashion-mnist"
         Path(__file__).parent
         / "_data"
         / datetime.now().isoformat()[:10]
@@ -93,8 +87,11 @@ if __name__ == "__main__":
     if cont.lower() == "n":
         sys.exit(1)
 
-    cluster = LocalCluster(n_workers=66, threads_per_worker=1, processes=True)
-    client = Client(cluster)
+    # cluster = LocalCluster(n_workers=66, threads_per_worker=1, processes=True)
+    client = Client("localhost:8786")
+
+    client.upload_file("wideresnet.py")
+    client.upload_file("train.py")
 
     def _prep():
         _env_prep()
@@ -106,17 +103,17 @@ if __name__ == "__main__":
     client.run(_prep)
 
     def submit(seed, **kwargs):
-        import train
+        # import train
 
         # assert train.__version__ == "0.1"
 
-        import adadamp
-
-        assert adadamp.__version__ == "0.2.0rc4"
+        # import adadamp
+        #
+        # assert adadamp.__version__ == "0.2.0rc4"
 
         return train.main(
             epochs=epochs,
-            verbose=False,
+            verbose=True,
             init_seed=seed,
             random_state=seed,
             tuning=True,
@@ -164,6 +161,6 @@ if __name__ == "__main__":
             for info in sys.exc_info():
                 print(info)
         else:
-            print(f"writing training {k}")
+            print(f"writing training {k} to {DATA_DIR}")
             _write(data, str(DATA_DIR / f"{k}-test.csv.zip"))
             _write(train_data, str(DATA_DIR / f"{k}-train.csv.zip"))
