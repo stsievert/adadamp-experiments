@@ -1,35 +1,31 @@
 {
     "adagrad": {
-        "initial_batch_size": 256,
-        "lr": 0.0056328758,
-        "weight_decay": 0.0003
+        "dwell": 20,
+        "initial_batch_size": 128,
+        "lr": 0.005,
+        "momentum": 0.9,
+        "weight_decay": 0.003
     },
     "geodamp": {
-        "dampingdelay": 6,
-        "dampingfactor": 2.5,
-        "initial_batch_size": 64,
-        "lr": 0.0056328758,
-        "max_batch_size": 4096,
-        "momentum": 0.9,
-        "nesterov": 1,
-        "weight_decay": 0.0003
-    },
-    "geodamplr": {
-        "dampingdelay": 6,
-        "dampingfactor": 2.5,
-        "initial_batch_size": 64,
-        "lr": 0.0056328758,
-        "max_batch_size": 64,
-        "momentum": 0.9,
-        "nesterov": 1,
-        "weight_decay": 0.0003
-    },
-    "radadamp": {
-        "initial_batch_size": 64,
-        "lr": 0.0056328758,
+        "dampingdelay": 10,
+        "dampingfactor": 1.2192312516491106,
+        "dwell": 20,
+        "initial_batch_size": 256,
+        "lr": 0.005,
         "max_batch_size": 512,
         "momentum": 0.9,
         "nesterov": 1,
-        "weight_decay": 0.0003
+        "rho": 0.999,
+        "weight_decay": 0.003
+    },
+    "radadamp": {
+        "dwell": 1,
+        "initial_batch_size": 256,
+        "lr": 0.005,
+        "max_batch_size": 2048,
+        "momentum": 0.9,
+        "nesterov": 1,
+        "rho": 0.999,
+        "weight_decay": 0.003
     }
 }
