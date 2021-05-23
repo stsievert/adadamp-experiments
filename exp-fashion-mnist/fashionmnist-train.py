@@ -26,7 +26,7 @@ import yaml
 import traceback
 import sys
 import json
-from copy import copy
+from copy import copy, deepcopy
 
 import numpy as np
 from distributed import Client, as_completed, LocalCluster
@@ -97,6 +97,8 @@ if __name__ == "__main__":
         return train.main(
             epochs=epochs,
             verbose=True,
+            init_seed=seed,
+            random_state=seed,
             tuning=False,
             **kwargs,
         )
@@ -106,9 +108,14 @@ if __name__ == "__main__":
 
      with open("hyperparams.json", "r") as f:
          paramslt = json.load(f)
+     paramslt["geodamplr"] = deepcopy(paramslt["geodamp"])
+     paramslt["geodamplr"]["max_batch_size"] = paramslt["geodamplr"]["initial_batch_size"]
+     paramslt["radadamplr"] = deepcopy(paramslt["radadamp"])
+     paramslt["radadamplr"]["max_batch_size"] = paramslt["radadamplr"]["initial_batch_size"]
+     paramslt["radadamplr"]["damper"] = paramslt["radadamplr"]["radadamp"]
 
-    for params in paramslt:
-        futures.extend(client.map(submit, seeds, **params))
+    for damper, params in paramslt.items():
+        futures.extend(client.map(submit, seeds, damper=damper, **params))
 
     for k, future in enumerate(as_completed(futures)):
         try:
