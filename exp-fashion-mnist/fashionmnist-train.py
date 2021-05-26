@@ -26,7 +26,7 @@ import yaml
 import traceback
 import sys
 import json
-from copy import copy
+from copy import copy, deepcopy
 
 import numpy as np
 from distributed import Client, as_completed, LocalCluster
@@ -96,20 +96,33 @@ if __name__ == "__main__":
     client.upload_file("train.py")
 
     def submit(seed, **kwargs):
+        import adadamp
+        assert adadamp.__version__ == "0.2.0rc6"
+
         return train.main(
             epochs=epochs,
             verbose=True,
-            tuning=False,
+            init_seed=seed,
+            random_state=seed,
+            tuning=True,
             **kwargs,
         )
 
     futures = []
     seeds = np.arange(seed_start, seed_start + n_runs)
 
-     with open("hyperparams.json", "r") as f:
-         paramslt = json.load(f)
+    with open("hyperparams.json", "r") as f:
+        paramslt = json.load(f)
+    for i in paramslt:
+        paramslt[i]["damper"] = i
+    paramslt["geodamplr"] = deepcopy(paramslt["geodamp"])
+    paramslt["geodamplr"]["max_batch_size"] = paramslt["geodamplr"]["initial_batch_size"]
+    paramslt["geodamplr"]["damper"] = "geodamplr"
+    paramslt["radadamplr"] = deepcopy(paramslt["radadamp"])
+    paramslt["radadamplr"]["max_batch_size"] = paramslt["radadamplr"]["initial_batch_size"]
+    paramslt["radadamplr"]["damper"] = "radadamp"
 
-    for params in paramslt:
+    for params in paramslt.values():
         futures.extend(client.map(submit, seeds, **params))
 
     for k, future in enumerate(as_completed(futures)):
