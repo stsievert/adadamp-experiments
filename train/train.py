@@ -1,4 +1,7 @@
 from __future__ import print_function
+import os
+for key in ["OMP_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "OPENBLAS_NUM_THREADS"]:
+    os.environ[key] = "1"
 from types import SimpleNamespace
 from typing import Any, Dict, List, Union, Optional, Tuple
 import hashlib
@@ -10,6 +13,7 @@ from datetime import datetime
 import random
 from time import time
 import os
+import sys
 
 import numpy.linalg as LA
 
@@ -26,14 +30,17 @@ from torch.optim.lr_scheduler import StepLR
 from sklearn.model_selection import ParameterSampler
 from torchvision.transforms import Compose
 import torchvision.transforms as transforms
-from torchvision.datasets import FashionMNIST, CIFAR10
+from torchvision.datasets import FashionMNIST, CIFAR10, MNIST
 import torchvision.models as models
 import torch.utils.data
+
+torch.set_num_threads(1)
 
 from adadamp import (
     AdaDamp,
     GeoDamp,
     PadaDamp,
+    RadaDamp,
     BaseDamper,
     GeoDampLR,
     CntsDampLR,
@@ -125,6 +132,7 @@ def ident(args: dict) -> str:
 
 
 def _set_seed(seed):
+    seed = int(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
@@ -159,15 +167,11 @@ def main(
     weight_decay: float=0,
 ) -> Tuple[List[Dict], List[Dict]]:
     # Get (tuning, random_state, init_seed)
-    assert int(tuning) or isinstance(tuning, bool)
-    assert isinstance(random_state, int)
-    assert isinstance(init_seed, int)
+    assert isinstance(tuning, (bool, int))
+    assert isinstance(random_state, (int,np.integer,np.int64))
+    assert isinstance(init_seed, (int,np.integer,np.int64))
 
-    if "NUM_THREADS" in os.environ:
-        v = os.environ["NUM_THREADS"]
-        if v:
-            print(f"NUM_THREADS={v} (int(v)={int(v)})")
-            torch.set_num_threads(int(v))
+    torch.set_num_threads(1)
 
     args: Dict[str, Any] = {
         "initial_batch_size": initial_batch_size,
@@ -209,13 +213,20 @@ def main(
         transforms.Normalize(mean=(0.1307,), std=(0.3081,)),
     ]
     transform_test = [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
-    assert dataset in ["fashionmnist", "cifar10", "synthetic"]
+    assert dataset in ["fashionmnist", "cifar10", "synthetic", "mnist"]
     if dataset == "fashionmnist":
         _dir = "_traindata/fashionmnist/"
         train_set = FashionMNIST(
             _dir, train=True, transform=Compose(transform_train), download=True,
         )
         test_set = FashionMNIST(_dir, train=False, transform=Compose(transform_test))
+        model = Net()
+    elif dataset == "mnist":
+        _dir = "_traindata/mnist/"
+        train_set = MNIST(
+            _dir, train=True, transform=Compose(transform_train), download=True,
+        )
+        test_set = MNIST(_dir, train=False, transform=Compose(transform_test))
         model = Net()
     elif dataset == "cifar10":
         transform_train = [
@@ -247,7 +258,7 @@ def main(
         model = LinearNet(data_kwargs["d"])
     else:
         raise ValueError(
-            f"dataset={dataset} not in ['fashionmnist', 'cifar10', 'synth']"
+            f"dataset={dataset} not in ['fashionmnist', 'cifar10', 'synth', 'mnist']"
         )
     if tuning:
         train_size = int(0.8 * len(train_set))
@@ -283,6 +294,7 @@ def main(
         optimizer = optim.Adadelta(model.parameters(), rho=rho)
     else:
         if not args["nesterov"]:
+            print("Use nesterov momentum")
             assert args["momentum"] == 0
         optimizer = optim.SGD(model.parameters(), lr=args["lr"], nesterov=args["nesterov"], momentum=args["momentum"], weight_decay=args["weight_decay"])
     n_data = len(train_set)
@@ -318,6 +330,8 @@ def main(
             dampingfactor=args["dampingfactor"],
             **opt_kwargs,
         )
+    elif args["damper"].lower() == "radadamp":
+        opt = RadaDamp(*opt_args, **opt_kwargs)
     elif args["damper"].lower() == "geodamplr":
         opt = GeoDampLR(
             *opt_args,
