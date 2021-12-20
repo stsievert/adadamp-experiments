@@ -1,0 +1,31 @@
+{
+    "adagrad": {
+        "dwell": 20,
+        "initial_batch_size": 128,
+        "lr": 0.005,
+        "momentum": 0.9,
+        "weight_decay": 0.003
+    },
+    "geodamp": {
+        "dampingdelay": 10,
+        "dampingfactor": 1.2192312516491106,
+        "dwell": 20,
+        "initial_batch_size": 256,
+        "lr": 0.005,
+        "max_batch_size": 512,
+        "momentum": 0.9,
+        "nesterov": 1,
+        "rho": 0.999,
+        "weight_decay": 0.003
+    },
+    "radadamp": {
+        "dwell": 1,
+        "initial_batch_size": 256,
+        "lr": 0.005,
+        "max_batch_size": 2048,
+        "momentum": 0.9,
+        "nesterov": 1,
+        "rho": 0.999,
+        "weight_decay": 0.003
+    }
+}
