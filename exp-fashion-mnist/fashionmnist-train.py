@@ -1,5 +1,6 @@
 import os
-
+from random import random
+from itertools import product
 
 def _env_prep():
     for key in [
@@ -36,6 +37,7 @@ from sklearn.model_selection import ParameterSampler
 
 import train
 
+
 def _write(data: List[Dict[str, Any]], filename: str) -> bool:
     df = pd.DataFrame(data)
     df.to_csv(filename, index=False)
@@ -52,12 +54,7 @@ def _get_unique(series: pd.Series) -> Any:
 
 
 if __name__ == "__main__":
-
-    DATA_DIR = (
-        Path(__file__).parent
-        / "_data"
-        / datetime.now().isoformat()[:10]
-    )
+    DATA_DIR = Path(__file__).parent / "_data" / datetime.now().isoformat()[:10]
     if not DATA_DIR.exists():
         DATA_DIR.mkdir()
     else:
@@ -97,6 +94,7 @@ if __name__ == "__main__":
 
     def submit(seed, **kwargs):
         import adadamp
+
         assert adadamp.__version__ == "0.2.0rc6"
 
         return train.main(
@@ -111,16 +109,72 @@ if __name__ == "__main__":
     futures = []
     seeds = np.arange(seed_start, seed_start + n_runs)
 
-    with open("hyperparams.json", "r") as f:
-        paramslt = json.load(f)
-    for i in paramslt:
-        paramslt[i]["damper"] = i
-    paramslt["geodamplr"] = deepcopy(paramslt["geodamp"])
-    paramslt["geodamplr"]["max_batch_size"] = paramslt["geodamplr"]["initial_batch_size"]
-    paramslt["geodamplr"]["damper"] = "geodamplr"
-    paramslt["radadamplr"] = deepcopy(paramslt["radadamp"])
-    paramslt["radadamplr"]["max_batch_size"] = paramslt["radadamplr"]["initial_batch_size"]
-    paramslt["radadamplr"]["damper"] = "radadamp"
+    # with open("hyperparams.json", "r") as f:
+    #     paramslt = json.load(f)
+    # for i in paramslt:
+    #     paramslt[i]["damper"] = i
+
+    # paramslt["geodamplr"] = deepcopy(paramslt["geodamp"])
+    # paramslt["geodamplr"]["max_batch_size"] = paramslt["geodamplr"][
+    #     "initial_batch_size"
+    # ]
+    # paramslt["geodamplr"]["damper"] = "geodamplr"
+    # paramslt["radadamplr"] = deepcopy(paramslt["radadamp"])
+    # paramslt["radadamplr"]["max_batch_size"] = paramslt["radadamplr"][
+    #     "initial_batch_size"
+    # ]
+    # paramslt["radadamplr"]["damper"] = "radadamp"
+
+    params = {
+        "adagrad": {
+            "dwell": [1,10,20],
+            "initial_batch_size": 128,
+            "lr": [0.001, 0.005, 0.0001, 0.00001],
+            "momentum": 0.9,
+            "weight_decay": 0.003,
+            "damper": "adagrad",
+        },
+        "geodamp": {
+            "dampingdelay": 10,
+            # "dampingfactor": 1.2192312516491106,
+            "dwell": 20,
+            "initial_batch_size": [128,256],
+            "lr": [0.001, 0.005, 0.0001],
+            "max_batch_size": [256,512,1028],
+            "momentum": 0.9,
+            "nesterov": 1,
+            "rho": [0.995,0.999],
+            "weight_decay": [0.001,0.003],
+            "damper": "geodamp",
+        },
+        "radadamp": {
+            "dwell": 1,
+            "initial_batch_size": [64,128,256,512],
+            "lr": [0.001, 0.005, 0.0001, 0.00001],
+            "max_batch_size": [1028,2048,4096],
+            "momentum": 0.9,
+            "nesterov": 1,
+            "rho": [0.995,0.999],
+            "weight_decay": [0.001,0.002,0.003],
+            "damper": "radadamp",
+        },
+    }
+
+    paramslt = []
+
+    for model_name, model_params in params.items():
+        hyperparameter_names = list(model_params.keys())
+        hyperparameter_values = [model_params[name] if isinstance(model_params[name], list) else [model_params[name]] for name in hyperparameter_names]
+        combinations = product(*hyperparameter_values)
+
+        # Iterate through each combination and create a dictionary
+        for combination in combinations:
+            hyperparameter_combination = dict(zip(hyperparameter_names, combination))
+            if model_name == "geodamp":
+                hyperparameter_combination["dampingfactor"] = random()*10
+            # hyperparameter_combination["model_name"] = model_name
+            paramslt.append(hyperparameter_combination)
+
 
     for params in paramslt.values():
         futures.extend(client.map(submit, seeds, **params))
