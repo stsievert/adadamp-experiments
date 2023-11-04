@@ -2,6 +2,7 @@ import os
 from random import random
 from itertools import product
 
+
 def _env_prep():
     for key in [
         "OMP_NUM_THREADS",
@@ -127,7 +128,7 @@ if __name__ == "__main__":
 
     params = {
         "adagrad": {
-            "dwell": [1,10,20],
+            "dwell": [1, 10, 20],
             "initial_batch_size": 128,
             "lr": [0.001, 0.005, 0.0001, 0.00001],
             "momentum": 0.9,
@@ -138,24 +139,24 @@ if __name__ == "__main__":
             "dampingdelay": 10,
             # "dampingfactor": 1.2192312516491106,
             "dwell": 20,
-            "initial_batch_size": [128,256],
+            "initial_batch_size": [128, 256],
             "lr": [0.001, 0.005, 0.0001],
-            "max_batch_size": [256,512,1028],
+            "max_batch_size": [256, 512, 1028],
             "momentum": 0.9,
             "nesterov": 1,
-            "rho": [0.995,0.999],
-            "weight_decay": [0.001,0.003],
+            "rho": [0.995, 0.999],
+            "weight_decay": [0.001, 0.003],
             "damper": "geodamp",
         },
         "radadamp": {
             "dwell": 1,
-            "initial_batch_size": [64,128,256,512],
+            "initial_batch_size": [64, 128, 256, 512],
             "lr": [0.001, 0.005, 0.0001, 0.00001],
-            "max_batch_size": [1028,2048,4096],
+            "max_batch_size": [1028, 2048, 4096],
             "momentum": 0.9,
             "nesterov": 1,
-            "rho": [0.995,0.999],
-            "weight_decay": [0.001,0.002,0.003],
+            "rho": [0.9, 0.995, 0.999, 1],
+            "weight_decay": [0.001, 0.002, 0.003],
             "damper": "radadamp",
         },
     }
@@ -164,17 +165,21 @@ if __name__ == "__main__":
 
     for model_name, model_params in params.items():
         hyperparameter_names = list(model_params.keys())
-        hyperparameter_values = [model_params[name] if isinstance(model_params[name], list) else [model_params[name]] for name in hyperparameter_names]
+        hyperparameter_values = [
+            model_params[name]
+            if isinstance(model_params[name], list)
+            else [model_params[name]]
+            for name in hyperparameter_names
+        ]
         combinations = product(*hyperparameter_values)
 
         # Iterate through each combination and create a dictionary
         for combination in combinations:
             hyperparameter_combination = dict(zip(hyperparameter_names, combination))
             if model_name == "geodamp":
-                hyperparameter_combination["dampingfactor"] = random()*10
+                hyperparameter_combination["dampingfactor"] = random() * 10
             # hyperparameter_combination["model_name"] = model_name
             paramslt.append(hyperparameter_combination)
-
 
     for params in paramslt.values():
         futures.extend(client.map(submit, seeds, **params))
