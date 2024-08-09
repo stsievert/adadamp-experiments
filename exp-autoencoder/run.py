@@ -13,8 +13,8 @@ import json
 from copy import copy
 
 import numpy as np
-from distributed import Client, as_completed
-from distributed.scheduler import KilledWorker
+#from distributed import Client, as_completed
+#from distributed.scheduler import KilledWorker
 
 DIR = Path(__file__).absolute().parent
 sys.path.append(str(DIR.parent))
@@ -38,13 +38,13 @@ def _get_unique(series: pd.Series) -> Any:
 
 
 if __name__ == "__main__":
-    DATA_DIR = "." / "_data" / datetime.now().isoformat()[:10]
+    DATA_DIR = Path(".") / "_data" / datetime.now().isoformat()[:10]
     if not DATA_DIR.exists():
-        DATA_DIR.mkdir()
+        DATA_DIR.mkdir(exist_ok=True, parents=True)
     else:
         d = datetime.now().isoformat()[:10] + "-v2"
         DATA_DIR = DATA_DIR.parent / d
-        DATA_DIR.mkdir()
+        DATA_DIR.mkdir(exist_ok=True)
     print(f"DATA_DIR = {DATA_DIR}")
     #x = input("Continue? y/n : ")
     #assert x.lower() in ["y", "n"]
@@ -61,7 +61,9 @@ if __name__ == "__main__":
         if "epochs" in pd.read_parquet(f).columns
         and pd.read_parquet(f).epochs.max() >= epochs - 5
     ]
-    params = {}
+    # TODO: make the dataset "*mnist" for different autoencoders
+    # Kuzushiji-MNIST, MNIST, EMNIST are all handwritten characters
+    params = {"dataset": "fashionmnist"}
     #with open("tuned-hyperparameters.json", "r") as f:
     #    params = json.load(f)
     print("n_runs =", n_runs)
@@ -69,25 +71,30 @@ if __name__ == "__main__":
     #if cont.lower() == "n":
     #    sys.exit(1)
 
-    client = Client("localhost:8786")
+    #client = Client("localhost:8786")
+    #client = Client()
 
     def submit(seed, **kwargs):
         import train
+        print(train.__file__)
         # assert train.__version__ == "0.1"
 
         import adadamp
         # assert adadamp.__version__ == "0.1.4"
+        print("kwargs = ", kwargs, flush=True)
 
-        return train.main(epochs=epochs, verbose=False, seed=seed, tuning=False, **kwargs)
+        return train.main(epochs=epochs, verbose=True, tuning=False, **kwargs)
 
     futures = []
     seeds = np.arange(seed_start, seed_start + n_runs)
     dampers = ["adadamp", "padadamp", "geodamp", "adagrad", "geodamplr"]
-    assert set(dampers) == set(params.keys())
+    #assert set(dampers) == set(params.keys())
 
     for damper in dampers:
-        kwargs = params.get(damper, {"random_state": 42})
-        futures.extend(client.map(submit, seeds, **kwargs))
+        kwargs = params.get(damper, {"random_state": 42, "init_seed": 42})
+        #futures.extend(map(submit, seeds, **kwargs))
+        submit(seeds[0], **kwargs)
+        #futures.extend(client.map(submit, seeds, **kwargs))
 
     for future in as_completed(futures):
         try:
