@@ -1,3 +1,8 @@
+"""
+TODO use loss (remove accuracy)
+TODO use all handwritten MNIST datasets
+
+"""
 import sys
 from pathlib import Path
 from pprint import pprint
@@ -13,7 +18,7 @@ import json
 from copy import copy
 
 import numpy as np
-#from distributed import Client, as_completed
+from distributed import Client, as_completed
 #from distributed.scheduler import KilledWorker
 
 DIR = Path(__file__).absolute().parent
@@ -52,7 +57,7 @@ if __name__ == "__main__":
     #    sys.exit(1)
 
     epochs = 3
-    n_runs = 2
+    n_runs = 1
     seed_start = 1000
 
     already_finished = [
@@ -72,9 +77,9 @@ if __name__ == "__main__":
     #    sys.exit(1)
 
     #client = Client("localhost:8786")
-    #client = Client()
+    client = Client()
 
-    def submit(seed, **kwargs):
+    def submit(random_state, **kwargs):
         import train
         print(train.__file__)
         # assert train.__version__ == "0.1"
@@ -83,18 +88,19 @@ if __name__ == "__main__":
         # assert adadamp.__version__ == "0.1.4"
         print("kwargs = ", kwargs, flush=True)
 
-        return train.main(epochs=epochs, verbose=True, tuning=False, **kwargs)
+        return train.main(epochs=epochs, verbose=True, tuning=False, random_state=int(random_state), **kwargs)
 
     futures = []
-    seeds = np.arange(seed_start, seed_start + n_runs)
+    random_states = np.arange(seed_start, seed_start + n_runs)
     dampers = ["adadamp", "padadamp", "geodamp", "adagrad", "geodamplr"]
+    dampers = ["adadamp", "radadamp"]#, "geodamp", "adagrad", "geodamplr"]
     #assert set(dampers) == set(params.keys())
 
     for damper in dampers:
-        kwargs = params.get(damper, {"random_state": 42, "init_seed": 42})
+        kwargs = params.get(damper, {"init_seed": 42})
         #futures.extend(map(submit, seeds, **kwargs))
-        submit(seeds[0], **kwargs)
-        #futures.extend(client.map(submit, seeds, **kwargs))
+        #submit(random_states[0], **kwargs)
+        futures.extend(client.map(submit, random_states, **kwargs))
 
     for future in as_completed(futures):
         try:
@@ -110,7 +116,7 @@ if __name__ == "__main__":
                 print(info)
         else:
             df = pd.DataFrame(data)
-            seed = _get_unique(df["seed"])
+            seed = _get_unique(df["random_state"])
             damper = _get_unique(df["damper"])
             tuning = _get_unique(df["tuning"])
             ident = _get_unique(df["ident"])
