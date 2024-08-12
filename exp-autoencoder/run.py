@@ -1,6 +1,13 @@
 """
-TODO use loss (remove accuracy)
-TODO use all handwritten MNIST datasets
+Now:
+
+- [ ] get one model working
+    - [ ] use loss (remove accuracy)
+    - [ ] viz input/output
+    - [ ] use all handwritten MNIST datasets
+- [ ] tune params
+
+Later:
 
 """
 import sys

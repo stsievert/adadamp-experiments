@@ -27,6 +27,7 @@ from sklearn.model_selection import ParameterSampler
 from torchvision.transforms import Compose
 import torchvision.transforms as transforms
 from torchvision.datasets import FashionMNIST, CIFAR10
+import torchvision
 import torchvision.models as models
 import torch.utils.data
 
@@ -171,8 +172,6 @@ class Autoencoder(nn.Module):
         base_channel_size: int,
         latent_dim: int,
         num_input_channels: int = 3,
-        width: int = 32,
-        height: int = 32,
     ):
         super().__init__()
         # Creating encoder and decoder
@@ -219,6 +218,11 @@ def _set_seed(seed):
     random.seed(seed)
     return True
 
+
+class NoisyImages(torchvision.datasets.SVHN):
+    def __getitem__(self, *args, **kwargs):
+        image, target = super().__getitem__(*args, **kwargs)
+        return image, image
 
 def main(
     dataset: str = "fashionmnist",
@@ -279,6 +283,7 @@ def main(
         "momentum": momentum,
         "weight_decay": weight_decay,
     }
+    print("286", flush=True)
     pprint(args)
 
     no_cuda = not cuda
@@ -296,7 +301,7 @@ def main(
         transforms.Normalize(mean=(0.1307,), std=(0.3081,)),
     ]
     transform_test = [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
-    assert dataset in ["fashionmnist", "cifar10", "synthetic"]
+    print("302", flush=True)
     if dataset == "fashionmnist":
         _dir = "_traindata/fashionmnist/"
         train_set = FashionMNIST(
@@ -333,10 +338,18 @@ def main(
         train_set, test_set, data_stats = synth_dataset(**data_kwargs)
         args.update(data_stats)
         model = LinearNet(data_kwargs["d"])
+    elif dataset == "autoencoder":
+        _dir = "_traindata/svhn/"
+        train_set = NoisyImages(
+            _dir, split="train", transform=Compose(transform_train), download=True,
+        )
+        test_set = NoisyImages(_dir, split="extra", transform=Compose(transform_test), download=True)
+        model = Autoencoder(28 * 28, 28, num_input_channels=3)
     else:
         raise ValueError(
             f"dataset={dataset} not in ['fashionmnist', 'cifar10', 'synth']"
         )
+    print("350", flush=True)
     if tuning:
         train_size = int(0.8 * len(train_set))
         test_size = len(train_set) - train_size
@@ -345,9 +358,9 @@ def main(
             train_set, [train_size, test_size], random_state=int(tuning),
         )
         train_x = [x.abs().sum().item() for x, _ in train_set]
-        train_y = [y for _, y in train_set]
+        train_y = [y.abs().sum().item() for _, y in train_set]
         test_x = [x.abs().sum().item() for x, _ in test_set]
-        test_y = [y for _, y in test_set]
+        test_y = [y.abs().sum().item() for _, y in test_set]
         data_stats = {
             "train_x_sum": sum(train_x),
             "train_y_sum": sum(train_y),
@@ -378,9 +391,9 @@ def main(
     opt_args = [model, train_set, optimizer]
     opt_kwargs = {k: args[k] for k in ["initial_batch_size", "max_batch_size", "random_state"]}
     opt_kwargs["device"] = device
-    if dataset == "synthetic":
+    if dataset in ["synthetic", "autoencoder"]:
         opt_kwargs["loss"] = F.mse_loss
-    if dataset == "cifar10":
+    elif dataset == "cifar10":
         opt_kwargs["loss"] = F.cross_entropy
     if args["damper"].lower() == "padadamp":
         if approx_rate:
@@ -443,7 +456,7 @@ def main(
         verbose=verbose,
         device="cuda" if use_cuda else "cpu",
     )
-    return data, train_data
+    return data, train_data, [model, train_set]
 
 
 def synth_dataset(
