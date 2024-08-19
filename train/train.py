@@ -26,7 +26,9 @@ from torch.optim.lr_scheduler import StepLR
 from sklearn.model_selection import ParameterSampler
 from torchvision.transforms import Compose
 import torchvision.transforms as transforms
+from torchvision.transforms import v2
 from torchvision.datasets import FashionMNIST, CIFAR10
+import torchvision
 import torchvision.models as models
 import torch.utils.data
 
@@ -41,9 +43,8 @@ from adadamp import (
 )
 from adadamp.utils import _get_resnet18
 import adadamp.experiment as experiment
-from .wideresnet import WideResNet
 
-Number = Union[float, int, np.float, np.int]
+Number = Union[float, int, np.integer]
 TensorDataset = torch.utils.data.TensorDataset
 if version.parse(scipy.__version__) <= version.parse("1.4.0"):
     # See https://github.com/scipy/scipy/pull/10815
@@ -97,6 +98,92 @@ class LinearNet(nn.Module):
         x = self.fc3(x)
         return x.reshape(-1)
 
+class Encoder(nn.Module):
+    def __init__(self, num_input_channels: int, base_channel_size: int, latent_dim: int, act_fn: object = nn.GELU):
+        """Encoder.
+
+        Args:
+           num_input_channels : Number of input channels of the image. For CIFAR, this parameter is 3
+           base_channel_size : Number of channels we use in the first convolutional layers. Deeper layers might use a duplicate of it.
+           latent_dim : Dimensionality of latent representation z
+           act_fn : Activation function used throughout the encoder network
+
+        """
+        super().__init__()
+        c_hid = base_channel_size
+        self.net = nn.Sequential(
+            nn.Conv2d(num_input_channels, c_hid, kernel_size=3, padding=1, stride=2),  # 32x32 => 16x16
+            act_fn(),
+            nn.Conv2d(c_hid, c_hid, kernel_size=3, padding=1),
+            act_fn(),
+            nn.Conv2d(c_hid, 2 * c_hid, kernel_size=3, padding=1, stride=2),  # 16x16 => 8x8
+            act_fn(),
+            nn.Conv2d(2 * c_hid, 2 * c_hid, kernel_size=3, padding=1),
+            act_fn(),
+            nn.Conv2d(2 * c_hid, 2 * c_hid, kernel_size=3, padding=1, stride=2),  # 8x8 => 4x4
+            act_fn(),
+            nn.Flatten(),  # Image grid to single feature vector
+            nn.Linear(2 * 16 * c_hid, latent_dim),
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
+
+class Decoder(nn.Module):
+    def __init__(self, num_input_channels: int, base_channel_size: int, latent_dim: int, act_fn: object = nn.GELU):
+        """Decoder.
+
+        Args:
+           num_input_channels : Number of channels of the image to reconstruct. For CIFAR, this parameter is 3
+           base_channel_size : Number of channels we use in the last convolutional layers. Early layers might use a duplicate of it.
+           latent_dim : Dimensionality of latent representation z
+           act_fn : Activation function used throughout the decoder network
+
+        """
+        super().__init__()
+        c_hid = base_channel_size
+        self.linear = nn.Sequential(nn.Linear(latent_dim, 2 * 16 * c_hid), act_fn())
+        self.net = nn.Sequential(
+            nn.ConvTranspose2d(
+                2 * c_hid, 2 * c_hid, kernel_size=3, output_padding=1, padding=1, stride=2
+            ),  # 4x4 => 8x8
+            act_fn(),
+            nn.Conv2d(2 * c_hid, 2 * c_hid, kernel_size=3, padding=1),
+            act_fn(),
+            nn.ConvTranspose2d(2 * c_hid, c_hid, kernel_size=3, output_padding=1, padding=1, stride=2),  # 8x8 => 16x16
+            act_fn(),
+            nn.Conv2d(c_hid, c_hid, kernel_size=3, padding=1),
+            act_fn(),
+            nn.ConvTranspose2d(
+                c_hid, num_input_channels, kernel_size=3, output_padding=1, padding=1, stride=2
+            ),  # 16x16 => 32x32
+            nn.Tanh(),  # The input images is scaled between -1 and 1, hence the output has to be bounded as well
+        )
+
+    def forward(self, x):
+        x = self.linear(x)
+        x = x.reshape(x.shape[0], -1, 4, 4)
+        x = self.net(x)
+        return x
+
+class Autoencoder(nn.Module):
+    def __init__(
+        self,
+        base_channel_size: int,
+        latent_dim: int,
+        num_input_channels: int = 3,
+    ):
+        super().__init__()
+        # Creating encoder and decoder
+        self.encoder = Encoder(num_input_channels, base_channel_size, latent_dim)
+        self.decoder = Decoder(num_input_channels, base_channel_size, latent_dim)
+
+    def forward(self, x):
+        """The forward function takes in an image and returns the reconstructed image."""
+        z = self.encoder(x)
+        x_hat = self.decoder(z)
+        return x_hat
 
 def stable_hash(w: bytes) -> str:
     h = hashlib.sha256(w)
@@ -104,7 +191,7 @@ def stable_hash(w: bytes) -> str:
 
 
 def _get_stable_val(x: Any) -> Any:
-    if isinstance(x, (float, np.float)):
+    if isinstance(x, (float, np.float64)):
         y = np.round(x, decimals=5)
         return int(y * 10 ** 5)
     return x
@@ -132,6 +219,18 @@ def _set_seed(seed):
     random.seed(seed)
     return True
 
+
+class NoisyImages(torchvision.datasets.SVHN):  # good; ~3 bits => can be compressed
+#class NoisyImages(torchvision.datasets.CIFAR10):  # no one can criticize this
+#class NoisyImages(torchvision.datasets.Caltech256):  # too long
+    def __getitem__(self, *args, **kwargs):
+        image, target = super().__getitem__(*args, **kwargs)
+        return image, image
+
+def scale(x, bounds=(-1, 1)):
+    width = bounds[1] - bounds[0]
+    offset = bounds[0]
+    return width*x + offset
 
 def main(
     dataset: str = "fashionmnist",
@@ -192,6 +291,7 @@ def main(
         "momentum": momentum,
         "weight_decay": weight_decay,
     }
+    print("286", flush=True)
     pprint(args)
 
     no_cuda = not cuda
@@ -203,13 +303,16 @@ def main(
     _device = torch.device(device)
     _set_seed(args["init_seed"])
 
+    mean = 0.1307
+    std = 0.3081
     transform_train = [
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
-        transforms.Normalize(mean=(0.1307,), std=(0.3081,)),
+        transforms.Normalize(mean=(mean,), std=(std,)),
     ]
-    transform_test = [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
-    assert dataset in ["fashionmnist", "cifar10", "synthetic"]
+    transform_test = [transforms.ToTensor(), transforms.Normalize((mean,), (std,))]
+    itransform = transforms.Normalize(mean=(-mean / std), std=1 / std)
+    print("302", flush=True)
     if dataset == "fashionmnist":
         _dir = "_traindata/fashionmnist/"
         train_set = FashionMNIST(
@@ -236,6 +339,7 @@ def main(
         )
         test_set = CIFAR10(_dir, train=False, transform=Compose(transform_test))
         if model == "wideresnet":
+            from .wideresnet import WideResNet
             model = WideResNet(16, 4, 0.3, 10)
         else:
             model = _get_resnet18()
@@ -245,10 +349,45 @@ def main(
         train_set, test_set, data_stats = synth_dataset(**data_kwargs)
         args.update(data_stats)
         model = LinearNet(data_kwargs["d"])
+    elif dataset == "autoencoder":
+        policy = v2.AutoAugmentPolicy.SVHN
+
+        transform_train = [
+            v2.ToImage(),
+            v2.ToDtype(torch.float32, scale=True),
+            v2.RandomHorizontalFlip(),
+            v2.RandomVerticalFlip(),
+            v2.ColorJitter(),
+            v2.RandomGrayscale(),
+            v2.GaussianNoise(sigma=0.01),
+            v2.Lambda(scale),
+        ]
+        transform_test = [
+            v2.ToImage(),
+            v2.ToDtype(torch.float32, scale=True),
+            v2.Lambda(scale),
+        ]
+
+        _dir = "_traindata/svhn/"
+        #train_set = NoisyImages(
+        #    _dir, train=True, transform=v2.Compose(transform_train), download=True,
+        #)
+        #test_set = NoisyImages(_dir, train=False, transform=v2.Compose(transform_test), download=True)
+        train_set = NoisyImages(
+            _dir, split="train", transform=v2.Compose(transform_train), download=True,
+        )
+        test_set = NoisyImages(_dir, split="test", transform=v2.Compose(transform_test), download=True)
+        model = Autoencoder(32, 100, num_input_channels=3)
+        n_params = sum(p.detach().numpy().size for p in model.parameters())
+        print(f"n_params = {n_params / 1e6:0.1f}M")
+        # 220M parameters with (32 * 32, 200, n_input=3)
+        # 65M parameters with 32 * 16, 400, n_input=3
+        # 400K params quick and good
     else:
         raise ValueError(
             f"dataset={dataset} not in ['fashionmnist', 'cifar10', 'synth']"
         )
+    print("350", flush=True)
     if tuning:
         train_size = int(0.8 * len(train_set))
         test_size = len(train_set) - train_size
@@ -256,10 +395,11 @@ def main(
         train_set, test_set = random_split(
             train_set, [train_size, test_size], random_state=int(tuning),
         )
+        test_set.dataset.transform=v2.Compose(transform_test)
         train_x = [x.abs().sum().item() for x, _ in train_set]
-        train_y = [y for _, y in train_set]
+        train_y = [y.abs().sum().item() for _, y in train_set]
         test_x = [x.abs().sum().item() for x, _ in test_set]
-        test_y = [y for _, y in test_set]
+        test_y = [y.abs().sum().item() for _, y in test_set]
         data_stats = {
             "train_x_sum": sum(train_x),
             "train_y_sum": sum(train_y),
@@ -290,9 +430,9 @@ def main(
     opt_args = [model, train_set, optimizer]
     opt_kwargs = {k: args[k] for k in ["initial_batch_size", "max_batch_size", "random_state"]}
     opt_kwargs["device"] = device
-    if dataset == "synthetic":
+    if dataset in ["synthetic", "autoencoder"]:
         opt_kwargs["loss"] = F.mse_loss
-    if dataset == "cifar10":
+    elif dataset == "cifar10":
         opt_kwargs["loss"] = F.cross_entropy
     if args["damper"].lower() == "padadamp":
         if approx_rate:
@@ -351,11 +491,11 @@ def main(
         test_set=test_set,
         args=args,
         test_freq=test_freq,
-        train_stats=dataset == "synthetic",
+        train_stats=True,#dataset == "synthetic",
         verbose=verbose,
         device="cuda" if use_cuda else "cpu",
     )
-    return data, train_data
+    return data, train_data, [model, test_set]
 
 
 def synth_dataset(
@@ -416,6 +556,20 @@ def choose_params_and_run(parameters=None, param_seed=0, damper="sgd", **kwargs)
 
 
 
+def _accumulate(iterable, fn=lambda x, y: x + y):
+    "Return running totals"
+    # _accumulate([1,2,3,4,5]) --> 1 3 6 10 15
+    # _accumulate([1,2,3,4,5], operator.mul) --> 1 2 6 24 120
+    it = iter(iterable)
+    try:
+        total = next(it)
+    except StopIteration:
+        return
+    yield total
+    for element in it:
+        total = fn(total, element)
+        yield total
+
 def random_split(dataset, lengths, random_state=None):
     r"""
     Randomly split a dataset into non-overlapping new datasets of given lengths.
@@ -426,7 +580,7 @@ def random_split(dataset, lengths, random_state=None):
 
     (note: slightly modified from torch.utils.data.random_split)
     """
-    from torch._utils import _accumulate
+    # from torch._utils import _accumulate
     from torch.utils.data import Subset
 
     rng = np.random.RandomState(seed=random_state)
