@@ -31,6 +31,7 @@ from torchvision.datasets import FashionMNIST, CIFAR10
 import torchvision
 import torchvision.models as models
 import torch.utils.data
+from torch.utils.data.dataset import Dataset
 
 from adadamp import (
     AdaDamp,
@@ -40,6 +41,7 @@ from adadamp import (
     GeoDampLR,
     CntsDampLR,
     GradientDescent,
+    RadaDamp,
 )
 from adadamp.utils import _get_resnet18
 import adadamp.experiment as experiment
@@ -256,7 +258,7 @@ def main(
     momentum: Optional[Union[float, int]] = 0,
     nesterov: bool = False,
     weight_decay: float=0,
-) -> Tuple[List[Dict], List[Dict]]:
+) -> Tuple[List[Dict], List[Dict], nn.Module, Dataset]:
     # Get (tuning, random_state, init_seed)
     assert int(tuning) or isinstance(tuning, bool)
     assert isinstance(random_state, int)
@@ -350,7 +352,7 @@ def main(
         args.update(data_stats)
         model = LinearNet(data_kwargs["d"])
     elif dataset == "autoencoder":
-        policy = v2.AutoAugmentPolicy.SVHN
+        # policy = v2.AutoAugmentPolicy.SVHN
 
         transform_train = [
             v2.ToImage(),
@@ -451,6 +453,8 @@ def main(
             dwell=args["dwell"],
             **opt_kwargs,
         )
+    elif args["damper"].lower() == "radadamp":
+        opt = RadaDamp(*opt_args, rho=rho, **opt_kwargs)
     elif args["damper"].lower() == "geodamp":
         opt = GeoDamp(
             *opt_args,
@@ -479,7 +483,7 @@ def main(
     ):
         opt = BaseDamper(*opt_args, **opt_kwargs)
     else:
-        raise ValueError("argument damper not recognized")
+        raise ValueError(f"argument damper={damper} not recognized")
     if dataset == "synthetic":
         pprint(data_stats)
         opt._meta["best_train_loss"] = data_stats["best_train_loss"]
@@ -495,7 +499,7 @@ def main(
         verbose=verbose,
         device="cuda" if use_cuda else "cpu",
     )
-    return data, train_data, [model, test_set]
+    return data, train_data, model, test_set
 
 
 def synth_dataset(

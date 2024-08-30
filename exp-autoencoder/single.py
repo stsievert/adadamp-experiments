@@ -1,3 +1,5 @@
+from copy import deepcopy
+from typing import Dict, Any
 from pathlib import Path
 import sys
 import pickle
@@ -45,6 +47,24 @@ def main(damper, **kwargs):
 
 
 if __name__ == "__main__":
-    for damper in ["adadamp", "adadelta", "adagrad", "sgd", "geodamp", "gd"]:
+    base_params = {"max_batch_size": 512, "lr": 0.05e-3}
+    params: Dict[str, Dict[str, Any]] = {
+        "adadamp": {"initial_batch_size": 32},
+        "geodamp": {"dampingdelay": 5, "dampingfactor": 5},
+        "radadamp": {},
+        "adagrad": {"lr": 0.01},
+    }
+    for damper in [
+        "radadamp",
+        "geodamp",
+        "adadamp",
+        "adadelta",
+        "adagrad",
+        "sgd",
+        "geodamp",
+        "gd",
+    ]:
         print(f"Training w/ {damper}")
-        main(damper)
+        param = deepcopy(base_params)
+        param.update(params.get(damper, {}))
+        main(damper, **param)
