@@ -240,7 +240,7 @@ def main(
     epochs: int = 6,
     verbose: Union[int, bool] = False,
     lr: float = 1.0,
-    cuda: bool = False,
+    cuda: bool = True,
     random_state: Optional[int] = None,  # seed to pass to BaseDamper
     init_seed: Optional[int] = None,  # seed for initialization
     tuning: bool = True,  # tuning seed
@@ -301,7 +301,7 @@ def main(
     args["ident"] = ident(args)
     args["tuning"] = tuning
 
-    use_cuda = not args["no_cuda"] and torch.cuda.is_available()
+    use_cuda = cuda and torch.cuda.is_available()
     device = "cuda" if use_cuda else "cpu"
     _device = torch.device(device)
     _set_seed(args["init_seed"])

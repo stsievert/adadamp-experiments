@@ -38,7 +38,8 @@ class MLP(nn.Module):
     def forward(self, x):
         x = F.relu(self.map1(x))
         x = F.relu(self.map2(x))
-        y_hat = F.log_softmax(self.map3(x))
+        x = self.map3(x)
+        y_hat = F.log_softmax(x, dim=1)  # from https://pytorch.org/docs/stable/_modules/torch/nn/functional.html#log_softmax , v2.5
         return y_hat
 
 def loguniform_m1(a, b, n=10_000, random_state=42):
@@ -95,6 +96,8 @@ class Wrapper(BaseEstimator):
         self.nesterov = nesterov
 
     def fit(self, X, y=None):
+        seed = int(np.unique(X.flatten())[0])
+        print(X, seed)
         keys = [
             "damper",
             "lr",
@@ -116,9 +119,9 @@ class Wrapper(BaseEstimator):
             epochs=self.epochs,
             train_data=(self.X_train, self.y_train),
             test_data=(self.X_test, self.y_test),
-            tuning=self.tuning,
+            tuning=self.tuning + seed,
             test_freq=1,
-            cuda=False,
+            cuda=True,
             random_state=self.seed,
             init_seed=self.seed,
             verbose=self.verbose,
@@ -165,11 +168,11 @@ if __name__ == "__main__":
 
     # gd use {1384, 786, 1076}M
     epochs = 100
-    n_params = 50
+    n_params = 200
 
     for damper in [
         "sgd",
-        "radadamp",  # 1391M
+        #"radadamp",  # 1391M
         "adadamp",
         "gd",  # GPU mem 1378M, 90/300W.
         "adagrad",
@@ -184,13 +187,14 @@ if __name__ == "__main__":
         est = MLP()
         m = Wrapper(
             est, X_train, y_train, X_test, y_test,
-            epochs=epochs, verbose=True, tuning=1,
+            epochs=epochs, verbose=False, tuning=1,
         )
         search = RandomizedSearchCV(
             m, space, n_iter=n_params, n_jobs=-1, refit=False, verbose=3,
-            random_state=42, cv=[([0, 1], [2])]
+            random_state=42, cv=[([0], [1, 2]), ([1], [1, 2]), ([2], [0, 1])]
         )
-        search.fit(np.random.uniform(size=(3, 2)))
+        seeds = 1 + (np.arange(3 * 2) // 2).reshape(3, 2)
+        search.fit(seeds.astype(int))
 
         with open(OUT / f"search-{damper}.pkl", "wb") as f:
             pickle.dump(search, f)
