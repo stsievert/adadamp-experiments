@@ -11,6 +11,7 @@ import sys
 from typing import Optional, Dict, Any
 import pickle
 from copy import deepcopy
+import json
 
 import torch
 import torch.nn as nn
@@ -22,6 +23,7 @@ from scipy.stats import loguniform
 from sklearn.model_selection import RandomizedSearchCV
 
 import train
+print(train.__file__)
 
 DIR = Path(__file__).absolute().parent
 DS_DIR = DIR / "dataset"
@@ -96,7 +98,7 @@ class Wrapper(BaseEstimator):
         self.nesterov = nesterov
 
     def fit(self, X, y=None):
-        seed = int(np.unique(X.flatten())[0])
+        seed = int(np.unique(np.asarray(X).flatten())[0])
         print(X, seed)
         keys = [
             "damper",
@@ -135,7 +137,7 @@ class Wrapper(BaseEstimator):
     def score(self, *args, **kwargs):
         return -1 * self.data_[-1]["test_loss"]
 
-def tune():
+if __name__ == "__main__":
     with open(DS_DIR / "embedding.pt", "rb") as f:
         data = torch.load(f, weights_only=True)
     X_train, X_test, y_train, y_test = [data[k] for k in ["X_train", "X_test", "y_train", "y_test"]]
@@ -171,6 +173,7 @@ def tune():
     n_params = 200
 
     for damper in [
+        "adadampnn",
         "adadelta",
         "sgd",
         #"radadamp",  # 1391M
@@ -189,8 +192,9 @@ def tune():
             est, X_train, y_train, X_test, y_test,
             epochs=epochs, verbose=False, tuning=1,
         )
+        #m.fit(np.array([[0, 1]]), np.array([2]))
         search = RandomizedSearchCV(
-            m, space, n_iter=n_params, n_jobs=64, refit=False, verbose=3,
+            m, space, n_iter=n_params, n_jobs=1, refit=False, verbose=3,
             random_state=42, cv=[([0], [1, 2]), ([1], [1, 2]), ([2], [0, 1])]
         )
         seeds = 1 + (np.arange(3 * 2) // 2).reshape(3, 2)
@@ -198,3 +202,38 @@ def tune():
 
         with open(OUT / f"search-{damper}.pkl", "wb") as f:
             pickle.dump(search, f)
+
+def deploying():
+    with open(DS_DIR / "embedding.pt", "rb") as f:
+        data = torch.load(f, weights_only=True)
+    X_train, X_test, y_train, y_test = [data[k] for k in ["X_train", "X_test", "y_train", "y_test"]]
+
+    assert tuple(X_train.shape) == (6667, 768) and tuple(X_test.shape) == (3333, 768)
+    assert tuple(y_train.shape) == (6667, ) and tuple(y_test.shape) == (3333, )
+    assert len(np.unique(y_train)) == 70
+
+    est = MLP()
+    params = {k: x for k, x in est.named_parameters()}
+    nele = {k: x.nelement() for k, x in params.items()}
+    assert sum(nele.values()) == 401_870
+
+    epochs = 100
+    n_params = 200
+
+    with open("tuned-params-2025-01-02.json", "r") as f:
+        params = json.load(f)
+    for damper, p in params.items():
+        if damper not in ["geodamp"]:
+            p["dwell"] = 1
+    
+    for damper in [
+        "adadelta",
+        "sgd",
+        "adadamp",
+        "gd",  # GPU mem 1378M, 90/300W.
+        "adagrad",
+        "geodamp",
+    ]:
+        print(f"\n## Training w/ {damper}")
+        from pprint import pprint
+        pprint(params[damper])

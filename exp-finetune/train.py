@@ -454,6 +454,14 @@ def main(
             dwell=args["dwell"],
             **opt_kwargs,
         )
+    if args["damper"].lower() == "adadampnn":
+        print("458 adadamnnn", flush=True)
+        opt = AdaDampNN(
+            *opt_args,
+            batch_growth_rate=args["batch_growth_rate"],
+            dwell=args["dwell"],
+            **opt_kwargs,
+        )
     elif args["damper"].lower() == "radadamp":
         opt = RadaDamp(*opt_args, rho=rho, **opt_kwargs)
     elif args["damper"].lower() == "geodamp":
