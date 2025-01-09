@@ -135,7 +135,7 @@ class Wrapper(BaseEstimator):
     def score(self, *args, **kwargs):
         return -1 * self.data_[-1]["test_loss"]
 
-if __name__ == "__main__":
+def tune():
     with open(DS_DIR / "embedding.pt", "rb") as f:
         data = torch.load(f, weights_only=True)
     X_train, X_test, y_train, y_test = [data[k] for k in ["X_train", "X_test", "y_train", "y_test"]]
@@ -152,7 +152,7 @@ if __name__ == "__main__":
     base_search_space = {
         "lr": loguniform(1e-5, 1e-1),
         "initial_batch_size": [16, 32, 64, 96, 128, 160, 192, 224, 256],
-        "max_batch_size": [None]*3 + [256, 512, 1024, 2048, 4096, 8192, 16384],
+        "max_batch_size": [256, 512, 1024, 2048, 4096],#, 8192, 16384],
         "dwell": [1, 2, 5, 10, 20, 50],
         "weight_decay": loguniform(1e-8, 1e-4),
         "momentum": loguniform_m1(1e-1, 1e-3),
@@ -171,13 +171,13 @@ if __name__ == "__main__":
     n_params = 200
 
     for damper in [
+        "adadelta",
         "sgd",
         #"radadamp",  # 1391M
         "adadamp",
         "gd",  # GPU mem 1378M, 90/300W.
         "adagrad",
         "geodamp",
-        "adadelta",
     ]:
         print(f"## Training w/ {damper}")
         space = deepcopy(base_search_space)
@@ -190,7 +190,7 @@ if __name__ == "__main__":
             epochs=epochs, verbose=False, tuning=1,
         )
         search = RandomizedSearchCV(
-            m, space, n_iter=n_params, n_jobs=-1, refit=False, verbose=3,
+            m, space, n_iter=n_params, n_jobs=64, refit=False, verbose=3,
             random_state=42, cv=[([0], [1, 2]), ([1], [1, 2]), ([2], [0, 1])]
         )
         seeds = 1 + (np.arange(3 * 2) // 2).reshape(3, 2)

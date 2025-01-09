@@ -3,7 +3,6 @@ from types import SimpleNamespace
 from typing import Any, Dict, List, Union, Optional, Tuple
 import hashlib
 import pickle
-from pprint import pprint
 import itertools
 from copy import copy
 from datetime import datetime
@@ -294,8 +293,6 @@ def main(
         "momentum": momentum,
         "weight_decay": weight_decay,
     }
-    print("286", flush=True)
-    pprint(args)
 
     no_cuda = not cuda
     args["ident"] = ident(args)
@@ -418,7 +415,7 @@ def main(
             "tuning": int(tuning),
         }
         args.update(data_stats)
-        pprint(data_stats)
+        print(data_stats)
 
     model = model.to(_device)
     _set_seed(args["random_state"])
@@ -489,7 +486,7 @@ def main(
     else:
         raise ValueError(f"argument damper={damper} not recognized")
     if dataset == "synthetic":
-        pprint(data_stats)
+        print(data_stats)
         opt._meta["best_train_loss"] = data_stats["best_train_loss"]
 
     data, train_data = experiment.run(
