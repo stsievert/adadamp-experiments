@@ -34,6 +34,7 @@ from torch.utils.data.dataset import Dataset
 
 from adadamp import (
     AdaDamp,
+    AdaDampNN,
     GeoDamp,
     PadaDamp,
     BaseDamper,
@@ -312,7 +313,6 @@ def main(
     ]
     transform_test = [transforms.ToTensor(), transforms.Normalize((mean,), (std,))]
     itransform = transforms.Normalize(mean=(-mean / std), std=1 / std)
-    print("302", flush=True)
     if dataset == "fashionmnist":
         _dir = "_traindata/fashionmnist/"
         train_set = FashionMNIST(
@@ -390,7 +390,6 @@ def main(
         raise ValueError(
             f"dataset={dataset} not in ['fashionmnist', 'cifar10', 'synth']"
         )
-    print("350", flush=True)
     if tuning:
         train_size = int(0.8 * len(train_set))
         test_size = len(train_set) - train_size
@@ -455,7 +454,6 @@ def main(
             **opt_kwargs,
         )
     if args["damper"].lower() == "adadampnn":
-        print("458 adadamnnn", flush=True)
         opt = AdaDampNN(
             *opt_args,
             batch_growth_rate=args["batch_growth_rate"],

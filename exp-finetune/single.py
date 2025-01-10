@@ -18,6 +18,7 @@ import torch.nn as nn
 from torch.utils.data import TensorDataset
 import torch.nn.functional as F
 import numpy as np
+import pandas as pd
 from sklearn.base import BaseEstimator
 from scipy.stats import loguniform
 from sklearn.model_selection import RandomizedSearchCV
@@ -43,6 +44,11 @@ class MLP(nn.Module):
         x = self.map3(x)
         y_hat = F.log_softmax(x, dim=1)  # from https://pytorch.org/docs/stable/_modules/torch/nn/functional.html#log_softmax , v2.5
         return y_hat
+
+def md5(x: Any) -> str:
+    import hashlib
+    result = hashlib.md5(str(x).encode("ascii"))
+    return result.digest().hex()
 
 def loguniform_m1(a, b, n=10_000, random_state=42):
     a, b = min(a, b), max(a, b)
@@ -98,6 +104,7 @@ class Wrapper(BaseEstimator):
         self.nesterov = nesterov
 
     def fit(self, X, y=None):
+
         seed = int(np.unique(np.asarray(X).flatten())[0])
         print(X, seed)
         keys = [
@@ -106,7 +113,6 @@ class Wrapper(BaseEstimator):
             "initial_batch_size",
             "max_batch_size",
             "momentum",
-            "damper",
             "dampingdelay",
             "dampingfactor",
             "rho",
@@ -115,6 +121,11 @@ class Wrapper(BaseEstimator):
             "nesterov",
         ]
         kwargs = {k: getattr(self, k) for k in keys}
+        ident = md5(tuple(kwargs.items()))
+        if kwargs["damper"] == "geodamplr":
+            kwargs["damper"] = "geodamp"
+            kwargs["max_batch_size"] = self.initial_batch_size
+
         data, train_data, model, test_set = train.main(
             dataset=None,
             model=self.model,
@@ -132,6 +143,11 @@ class Wrapper(BaseEstimator):
         self.data_ = data
         self.model_ = model
         self.train_data_ = train_data
+
+        out_dir = Path(__file__).absolute().parent / "data-tuning" / "runs"
+        out_data = pd.DataFrame(self.data_)
+        with open(out_dir / "{self.damper}-{ident}.pkl.tar.gz", "wb") as f:
+            out_data.to_pickle(f)
         return self
 
     def score(self, *args, **kwargs):
@@ -168,19 +184,15 @@ if __name__ == "__main__":
         "adagrad": {"lr": loguniform(1e-3, 1e-1)},
     }
 
-    # gd use {1384, 786, 1076}M
-    epochs = 100
-    n_params = 200
-
+    # adagrad uses <=426M
+    n_params = 64
     for damper in [
+        "geodamplr",
         "adadampnn",
-        "adadelta",
-        "sgd",
-        #"radadamp",  # 1391M
-        "adadamp",
-        "gd",  # GPU mem 1378M, 90/300W.
-        "adagrad",
         "geodamp",
+        "sgd",
+        "gd",
+        "adagrad",
     ]:
         print(f"## Training w/ {damper}")
         space = deepcopy(base_search_space)
@@ -188,13 +200,13 @@ if __name__ == "__main__":
         space.update({"damper": [damper]})
 
         est = MLP()
+        epochs = 200 if damper != "gd" else 500
         m = Wrapper(
             est, X_train, y_train, X_test, y_test,
             epochs=epochs, verbose=False, tuning=1,
         )
-        #m.fit(np.array([[0, 1]]), np.array([2]))
         search = RandomizedSearchCV(
-            m, space, n_iter=n_params, n_jobs=1, refit=False, verbose=3,
+            m, space, n_iter=n_params, n_jobs=32, refit=True, verbose=3,
             random_state=42, cv=[([0], [1, 2]), ([1], [1, 2]), ([2], [0, 1])]
         )
         seeds = 1 + (np.arange(3 * 2) // 2).reshape(3, 2)
@@ -217,7 +229,7 @@ def deploying():
     nele = {k: x.nelement() for k, x in params.items()}
     assert sum(nele.values()) == 401_870
 
-    epochs = 100
+    epochs = 150
     n_params = 200
 
     with open("tuned-params-2025-01-02.json", "r") as f:
