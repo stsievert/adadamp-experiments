@@ -12,6 +12,8 @@ from typing import Optional, Dict, Any
 import pickle
 from copy import deepcopy
 import json
+import itertools
+from time import time
 
 import torch
 import torch.nn as nn
@@ -146,7 +148,7 @@ class Wrapper(BaseEstimator):
 
         out_dir = Path(__file__).absolute().parent / "data-tuning" / "runs"
         out_data = pd.DataFrame(self.data_)
-        with open(out_dir / "{self.damper}-{ident}.pkl.tar.gz", "wb") as f:
+        with open(out_dir / "{self.damper}-{ident}.pkl.zip", "wb") as f:
             out_data.to_pickle(f)
         return self
 
@@ -184,6 +186,52 @@ if __name__ == "__main__":
         "adagrad": {"lr": loguniform(1e-3, 1e-1)},
     }
 
+    def run(k, wd, dwell, momentum, lr, ibs):
+        start = time()
+        print(f"Fitting {k}th param w/ {dwell=}, {lr=}, {momentum=}, {wd=}")
+        kwargs = {"dwell": dwell, "lr": lr, "momentum": momentum, "weight_decay": wd}
+        m = Wrapper(
+            MLP(), X_train, y_train, X_test, y_test,
+            epochs=200, verbose=True, tuning=2,
+        )
+        m.set_params(
+            damper="adadampnn",
+            dwell=dwell,
+            initial_batch_size=ibs,
+            max_batch_size=4096,
+            lr=lr,
+            momentum=momentum,
+            nesterov=True,
+            weight_decay=wd,
+        )
+        seeds = 3 + (np.arange(3 * 2) // 2).reshape(3, 2)
+        try:
+            m.fit(seeds.astype(int))
+        except Exception as e:
+            print(f"Failed with {e} for job w/ {dwell=}, {lr=}, {momentum=}, {wd=}")
+            import logging
+            logging.exception(e)
+            return
+
+        print(f"    took {time() - start}s")
+        out_f = DIR / "data-tuning" / "sweep" / f"d={dwell}-lr={lr}-m={momentum}-wd={wd}.pkl.zip"
+        pd.DataFrame(m.data_).to_pickle(out_f)
+        return
+
+    # most important first
+    ibs = [4, 8, 16, 16 * 2, 16 * 3, 16 * 4, 16 * 5]
+    lrs = [1e-3, 0.1e-3, 0.3e-3]
+    momentums = [0.8, 0.6, 0.7, 0.9, 0.95]
+    dwells = [300, 100, 1000, 3000]
+    wds = [1e-5, 1e-6, 1e-4]
+    params = list(itertools.product(wds, dwells, momentums, lrs, ibs))
+    print("len(params) =", len(params))
+
+    from joblib import Parallel, delayed
+    Parallel(n_jobs=128)(delayed(run)(k, *param) for k, param in enumerate(params))
+    sys.exit(0)
+
+
     # adagrad uses <=426M
     n_params = 64
     for damper in [
@@ -214,38 +262,3 @@ if __name__ == "__main__":
 
         with open(OUT / f"search-{damper}.pkl", "wb") as f:
             pickle.dump(search, f)
-
-def deploying():
-    with open(DS_DIR / "embedding.pt", "rb") as f:
-        data = torch.load(f, weights_only=True)
-    X_train, X_test, y_train, y_test = [data[k] for k in ["X_train", "X_test", "y_train", "y_test"]]
-
-    assert tuple(X_train.shape) == (6667, 768) and tuple(X_test.shape) == (3333, 768)
-    assert tuple(y_train.shape) == (6667, ) and tuple(y_test.shape) == (3333, )
-    assert len(np.unique(y_train)) == 70
-
-    est = MLP()
-    params = {k: x for k, x in est.named_parameters()}
-    nele = {k: x.nelement() for k, x in params.items()}
-    assert sum(nele.values()) == 401_870
-
-    epochs = 150
-    n_params = 200
-
-    with open("tuned-params-2025-01-02.json", "r") as f:
-        params = json.load(f)
-    for damper, p in params.items():
-        if damper not in ["geodamp"]:
-            p["dwell"] = 1
-    
-    for damper in [
-        "adadelta",
-        "sgd",
-        "adadamp",
-        "gd",  # GPU mem 1378M, 90/300W.
-        "adagrad",
-        "geodamp",
-    ]:
-        print(f"\n## Training w/ {damper}")
-        from pprint import pprint
-        pprint(params[damper])

@@ -300,7 +300,8 @@ def main(
     args["tuning"] = tuning
 
     use_cuda = cuda and torch.cuda.is_available()
-    device = "cuda" if use_cuda else "cpu"
+    cid = random.choice([0, 1])
+    device = f"cuda:{cid}" if use_cuda else "cpu"
     _device = torch.device(device)
     _set_seed(args["init_seed"])
 
@@ -504,7 +505,7 @@ def main(
         test_freq=test_freq,
         train_stats=True,#dataset == "synthetic",
         verbose=verbose,
-        device="cuda" if use_cuda else "cpu",
+        device=_device,
     )
     return data, train_data, model, test_set
 
