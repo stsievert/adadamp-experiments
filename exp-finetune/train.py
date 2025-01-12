@@ -259,6 +259,7 @@ def main(
     nesterov: bool = False,
     weight_decay: float=0,
     train_data=None, test_data=None,
+    noisy = False,
 ) -> Tuple[List[Dict], List[Dict], nn.Module, Dataset]:
     # Get (tuning, random_state, init_seed)
     assert int(tuning) or isinstance(tuning, bool)
@@ -293,6 +294,7 @@ def main(
         "nesterov": nesterov,
         "momentum": momentum,
         "weight_decay": weight_decay,
+        "noisy": noisy,
     }
 
     no_cuda = not cuda

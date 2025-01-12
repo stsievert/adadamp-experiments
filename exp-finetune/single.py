@@ -80,6 +80,7 @@ class Wrapper(BaseEstimator):
         dwell=5,
         weight_decay=0.005,
         nesterov=True,
+        noisy=False,
     ):
         self.model = model
         
@@ -104,6 +105,7 @@ class Wrapper(BaseEstimator):
         self.dwell = dwell
         self.weight_decay = weight_decay
         self.nesterov = nesterov
+        self.noisy = noisy
 
     def fit(self, X, y=None):
 
@@ -121,6 +123,7 @@ class Wrapper(BaseEstimator):
             "dwell",
             "weight_decay",
             "nesterov",
+            "noisy",
         ]
         kwargs = {k: getattr(self, k) for k in keys}
         ident = md5(tuple(kwargs.items()))
@@ -186,7 +189,7 @@ if __name__ == "__main__":
         "adagrad": {"lr": loguniform(1e-3, 1e-1)},
     }
 
-    def run(k, wd, dwell, momentum, lr, ibs):
+    def run(k, wd, dwell, momentum, lr, ibs, noisy):
         start = time()
         print(f"Fitting {k}th param w/ {dwell=}, {lr=}, {momentum=}, {wd=}")
         kwargs = {"dwell": dwell, "lr": lr, "momentum": momentum, "weight_decay": wd}
@@ -203,6 +206,7 @@ if __name__ == "__main__":
             momentum=momentum,
             nesterov=True,
             weight_decay=wd,
+            noisy=noisy,
         )
         seeds = 3 + (np.arange(3 * 2) // 2).reshape(3, 2)
         try:
@@ -214,21 +218,22 @@ if __name__ == "__main__":
             return
 
         print(f"    took {time() - start}s")
-        out_f = DIR / "data-tuning" / "sweep" / f"d={dwell}-lr={lr}-m={momentum}-wd={wd}.pkl.zip"
+        out_f = DIR / "data-tuning" / "sweep" / f"d={dwell}-lr={lr}-m={momentum}-wd={wd}-ibs={ibs}-noisy={noisy}.pkl.zip"
         pd.DataFrame(m.data_).to_pickle(out_f)
         return
 
     # most important first
-    ibs = [4, 8, 16, 16 * 2, 16 * 3, 16 * 4, 16 * 5]
+    noisy = [True, False]
+    ibs = [2, 4, 8, 16, 16 * 2, 16 * 3, 16 * 4, 16 * 5]
     lrs = [1e-3, 0.1e-3, 0.3e-3]
     momentums = [0.8, 0.6, 0.7, 0.9, 0.95]
     dwells = [300, 100, 1000, 3000]
     wds = [1e-5, 1e-6, 1e-4]
-    params = list(itertools.product(wds, dwells, momentums, lrs, ibs))
+    params = list(itertools.product(wds, dwells, momentums, lrs, ibs, noisy))
     print("len(params) =", len(params))
 
     from joblib import Parallel, delayed
-    Parallel(n_jobs=128)(delayed(run)(k, *param) for k, param in enumerate(params))
+    Parallel(n_jobs=64)(delayed(run)(k, *param) for k, param in enumerate(params))
     sys.exit(0)
 
 
