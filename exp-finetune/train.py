@@ -461,6 +461,7 @@ def main(
             *opt_args,
             batch_growth_rate=args["batch_growth_rate"],
             dwell=args["dwell"],
+            noisy=args["noisy"],
             **opt_kwargs,
         )
     elif args["damper"].lower() == "radadamp":
