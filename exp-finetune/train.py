@@ -260,6 +260,8 @@ def main(
     weight_decay: float=0,
     train_data=None, test_data=None,
     noisy = False,
+    reduction = "mean",
+    wait: int = 10,
 ) -> Tuple[List[Dict], List[Dict], nn.Module, Dataset]:
     # Get (tuning, random_state, init_seed)
     assert int(tuning) or isinstance(tuning, bool)
@@ -295,6 +297,8 @@ def main(
         "momentum": momentum,
         "weight_decay": weight_decay,
         "noisy": noisy,
+        "reduction": reduction,
+        "wait": wait,
     }
 
     no_cuda = not cuda
@@ -439,24 +443,17 @@ def main(
         opt_kwargs["loss"] = F.mse_loss
     elif dataset == "cifar10":
         opt_kwargs["loss"] = F.cross_entropy
-    if args["damper"].lower() == "padadamp":
-        if approx_rate:
-            assert isinstance(max_batch_size, int)
-            BM = max_batch_size
-            B0 = initial_batch_size
-            e = epochs
-            n = n_data
-            r_hat = 4/3 * (BM - B0) * (B0 + 2*BM + 3)
-            r_hat /= (2*BM - 2*B0 + 3 * e * n)
-            args["batch_growth_rate"] = r_hat
 
+    if args["damper"].lower() == "padadamp":
         opt = PadaDamp(
             *opt_args,
-            batch_growth_rate=args["batch_growth_rate"],
+            reduction=args["reduction"],
+            rho=args["rho"],
             dwell=args["dwell"],
+            wait=args["wait"],
             **opt_kwargs,
         )
-    if args["damper"].lower() == "adadampnn":
+    elif args["damper"].lower() == "adadampnn":
         opt = AdaDampNN(
             *opt_args,
             batch_growth_rate=args["batch_growth_rate"],

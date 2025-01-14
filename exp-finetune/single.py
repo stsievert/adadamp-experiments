@@ -81,6 +81,9 @@ class Wrapper(BaseEstimator):
         weight_decay=0.005,
         nesterov=True,
         noisy=False,
+        reduction="mean",
+        write: bool = True,
+        wait: int = 10,
     ):
         self.model = model
         
@@ -106,6 +109,9 @@ class Wrapper(BaseEstimator):
         self.weight_decay = weight_decay
         self.nesterov = nesterov
         self.noisy = noisy
+        self.reduction = reduction
+        self.write = write
+        self.wait = wait
 
     def fit(self, X, y=None):
 
@@ -124,6 +130,8 @@ class Wrapper(BaseEstimator):
             "weight_decay",
             "nesterov",
             "noisy",
+            "reduction",
+            "wait",
         ]
         kwargs = {k: getattr(self, k) for k in keys}
         ident = md5(tuple(kwargs.items()))
@@ -149,10 +157,11 @@ class Wrapper(BaseEstimator):
         self.model_ = model
         self.train_data_ = train_data
 
-        out_dir = Path(__file__).absolute().parent / "data-tuning" / "runs"
-        out_data = pd.DataFrame(self.data_)
-        with open(out_dir / "{self.damper}-{ident}.pkl.zip", "wb") as f:
-            out_data.to_pickle(f)
+        if self.write:
+            out_dir = Path(__file__).absolute().parent / "data-tuning" / "runs"
+            out_data = pd.DataFrame(self.data_)
+            with open(out_dir / "{self.damper}-{ident}.pkl.zip", "wb") as f:
+                out_data.to_pickle(f)
         return self
 
     def score(self, *args, **kwargs):
