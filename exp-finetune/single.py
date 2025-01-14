@@ -223,19 +223,19 @@ if __name__ == "__main__":
         return
 
     # most important first
-    noisy = [True, False]
-    ibs = [2, 4, 8, 16, 16 * 2, 16 * 3, 16 * 4, 16 * 5]
-    lrs = [1e-3, 0.1e-3, 0.3e-3]
-    momentums = [0.8, 0.6, 0.7, 0.9, 0.95]
-    dwells = [300, 100, 1000, 3000]
-    wds = [1e-5, 1e-6, 1e-4]
+    noisy = [False]
+    wds = [1e-6]
+    ibs = [32, 64, 128, 256, 512, 8, 16]
+    lrs = [1e-3, 0.7e-3, 0.4e-3, 2e-3]
+    momentums = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7][::-1]
+    dwells = [30, 100, 1, 3, 10, 300]
+
     params = list(itertools.product(wds, dwells, momentums, lrs, ibs, noisy))
     print("len(params) =", len(params))
 
     from joblib import Parallel, delayed
     Parallel(n_jobs=64)(delayed(run)(k, *param) for k, param in enumerate(params))
     sys.exit(0)
-
 
     # adagrad uses <=426M
     n_params = 64
