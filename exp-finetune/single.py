@@ -198,16 +198,16 @@ if __name__ == "__main__":
         "adagrad": {"lr": loguniform(1e-3, 1e-1)},
     }
 
-    def run(k, wd, dwell, momentum, lr, ibs, noisy):
+    def run(k, *, wd, dwell, momentum, lr, ibs, noisy, wait, rho, reduction):
         start = time()
         print(f"Fitting {k}th param w/ {dwell=}, {lr=}, {momentum=}, {wd=}")
         kwargs = {"dwell": dwell, "lr": lr, "momentum": momentum, "weight_decay": wd}
         m = Wrapper(
             MLP(), X_train, y_train, X_test, y_test,
-            epochs=200, verbose=True, tuning=2,
+            epochs=150, verbose=True, tuning=2,
         )
         m.set_params(
-            damper="adadampnn",
+            damper="padadamp",
             dwell=dwell,
             initial_batch_size=ibs,
             max_batch_size=4096,
@@ -216,6 +216,7 @@ if __name__ == "__main__":
             nesterov=True,
             weight_decay=wd,
             noisy=noisy,
+            wait=wait, rho=rho, reduction=reduction,
         )
         seeds = 3 + (np.arange(3 * 2) // 2).reshape(3, 2)
         try:
@@ -226,24 +227,29 @@ if __name__ == "__main__":
             logging.exception(e)
             return
 
-        print(f"    took {time() - start}s")
-        out_f = DIR / "data-tuning" / "sweep" / f"d={dwell}-lr={lr}-m={momentum}-wd={wd}-ibs={ibs}-noisy={noisy}.pkl.zip"
+        print(f"    took {(time() - start) / 60:0.1f}min")
+        fname = f"d={dwell}-lr={lr}-m={momentum}-wd={wd}-ibs={ibs}-noisy={noisy}-reduction={reduction}-rho={rho}-wait={wait}.pkl.zip"
+        out_f = DIR / "data-tuning" / "sweep" / fname
         pd.DataFrame(m.data_).to_pickle(out_f)
         return
 
     # most important first
-    noisy = [False]
     wds = [1e-6]
-    ibs = [32, 64, 128, 256, 512, 8, 16]
-    lrs = [1e-3, 0.7e-3, 0.4e-3, 2e-3]
-    momentums = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7][::-1]
-    dwells = [30, 100, 1, 3, 10, 300]
+    lrs = [0.7e-3]#, 0.7e-3, 0.4e-3]
+    ibs = [32, 64, 128, 256, 512] # 4
+    momentums = [0.6, 0.9, 0.3]  # 3
+    dwells = [1, 3, 10, 30, 100] # 5
+    rho = [0, 0.3, 0.6, 0.9] # 4
+    wait = [10, 100, 1000]  # 3
+    reduction = ["mean", "min", "median", "max"] # 4
 
-    params = list(itertools.product(wds, dwells, momentums, lrs, ibs, noisy))
+    params = list(itertools.product(reduction, dwells, rho, wds, wait, lrs, ibs, momentums))
     print("len(params) =", len(params))
 
     from joblib import Parallel, delayed
-    Parallel(n_jobs=64)(delayed(run)(k, *param) for k, param in enumerate(params))
+    Parallel(n_jobs=64)(delayed(run)(
+        k, wd=wd, lr=lr, ibs=ibs, momentum=mom, dwell=d, rho=rho, wait=wa, reduction=red, noisy=False,
+    ) for k, (red, d, rho, wd, wa, lr, ibs, mom) in enumerate(params))
     sys.exit(0)
 
     # adagrad uses <=426M
