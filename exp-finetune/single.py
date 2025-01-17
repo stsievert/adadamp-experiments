@@ -65,7 +65,7 @@ class Wrapper(BaseEstimator):
         model,
         X_train, y_train, X_test, y_test,
         tuning: int = 1,
-        epochs=100,
+        epochs=200,
         verbose=1,
         seed=42,
         *,
@@ -114,9 +114,25 @@ class Wrapper(BaseEstimator):
         self.wait = wait
 
     def fit(self, X, y=None):
+        fname = f"d={dwell}-lr={lr}-m={momentum}-wd={wd}-ibs={ibs}-noisy={noisy}-reduction={reduction}-rho={rho}-wait={wait}-mbs={mbs}.pkl.zip"
+        out_f = DIR / "data-tuning" / "sweep"
+        if out_f / fname in out_f.iterdir():
+            print(f"Skipping {fname}, already in directory", flush=True)
+            return
+        try:
+            self._fit(X, y=y)
+        except Exception as e:
+            print(f"Failed with {e} for job w/ {dwell=}, {lr=}, {momentum=}, {wd=}", flush=True)
+            import logging
+            logging.exception(e)
+            return
+        print(f"    took {(time() - start) / 60:0.1f}min", flush=True)
+        pd.DataFrame(m.data_).to_pickle(out_f / fname)
+        return
 
+    def _fit(self, X, y=None):
         seed = int(np.unique(np.asarray(X).flatten())[0])
-        print(X, seed)
+        #print(X, seed)
         keys = [
             "damper",
             "lr",
@@ -197,20 +213,23 @@ if __name__ == "__main__":
         "radadamp": {"rho": loguniform_m1(1e-5, 1e-1)},
         "adagrad": {"lr": loguniform(1e-3, 1e-1)},
     }
+    m = Wrapper(
+        MLP(), X_train, y_train, X_test, y_test,
+        epochs=100, verbose=True, tuning=2,
+    )
 
-    def run(k, *, wd, dwell, momentum, lr, ibs, noisy, wait, rho, reduction):
+    def run(k, *, wd, dwell, momentum, lr, ibs, noisy, wait, rho, reduction, mbs):
         start = time()
-        print(f"Fitting {k}th param w/ {dwell=}, {lr=}, {momentum=}, {wd=}")
         kwargs = {"dwell": dwell, "lr": lr, "momentum": momentum, "weight_decay": wd}
         m = Wrapper(
             MLP(), X_train, y_train, X_test, y_test,
-            epochs=150, verbose=True, tuning=2,
+            epochs=100, verbose=True, tuning=2,
         )
         m.set_params(
             damper="padadamp",
             dwell=dwell,
             initial_batch_size=ibs,
-            max_batch_size=4096,
+            max_batch_size=mbs,
             lr=lr,
             momentum=momentum,
             nesterov=True,
@@ -219,37 +238,62 @@ if __name__ == "__main__":
             wait=wait, rho=rho, reduction=reduction,
         )
         seeds = 3 + (np.arange(3 * 2) // 2).reshape(3, 2)
+
+        fname = f"d={dwell}-lr={lr}-m={momentum}-wd={wd}-ibs={ibs}-noisy={noisy}-reduction={reduction}-rho={rho}-wait={wait}-mbs={mbs}.pkl.zip"
+        out_f = DIR / "data-tuning" / "sweep"
+        if out_f / fname in out_f.iterdir():
+            print(f"Skipping {fname}, already in directory", flush=True)
+            return
+        print(f"Fitting {k}th param w/ {dwell=}, {lr=}, {momentum=}, {wd=}")
         try:
             m.fit(seeds.astype(int))
         except Exception as e:
-            print(f"Failed with {e} for job w/ {dwell=}, {lr=}, {momentum=}, {wd=}")
+            print(f"Failed with {e} for job w/ {dwell=}, {lr=}, {momentum=}, {wd=}", flush=True)
             import logging
             logging.exception(e)
             return
-
-        print(f"    took {(time() - start) / 60:0.1f}min")
-        fname = f"d={dwell}-lr={lr}-m={momentum}-wd={wd}-ibs={ibs}-noisy={noisy}-reduction={reduction}-rho={rho}-wait={wait}.pkl.zip"
-        out_f = DIR / "data-tuning" / "sweep" / fname
-        pd.DataFrame(m.data_).to_pickle(out_f)
+        print(f"    took {(time() - start) / 60:0.1f}min", flush=True)
+        pd.DataFrame(m.data_).to_pickle(out_f / fname)
         return
 
     # most important first
-    wds = [1e-6]
-    lrs = [0.7e-3]#, 0.7e-3, 0.4e-3]
-    ibs = [32, 64, 128, 256, 512] # 4
-    momentums = [0.6, 0.9, 0.3]  # 3
-    dwells = [1, 3, 10, 30, 100] # 5
-    rho = [0, 0.3, 0.6, 0.9] # 4
-    wait = [10, 100, 1000]  # 3
-    reduction = ["mean", "min", "median", "max"] # 4
+    reduction = ["mean"]#, "min", "median", "max"] # 4
+    dwells = [1]#, 3, 10, 30, 100] # 5
+    wds = [1e-6]  # 2
+    wait = [10]#, 100, 1000]  # 3
 
-    params = list(itertools.product(reduction, dwells, rho, wds, wait, lrs, ibs, momentums))
+    lrs = [0.1e-3, 0.3e-3, 1e-3] # 3
+    ibs = [16, 32, 64, 128] # 4
+    momentums = [0.9, 0.6, 0.3, 0.1]  # 4
+    rho = [0, 0.05, 0.1, 0.2, 0.4, 0.8, 0.9, 0.95] # 8
+    mbs = [128, 256, 512, 1024, 2048, 4096]  # 6
+
+    params = list(itertools.product(reduction, dwells, rho, wds, wait, lrs, ibs, momentums, mbs))
     print("len(params) =", len(params))
 
+    def score(*, wd, momentum, dwell, rho, reduction, wait, **kwargs):
+        score = np.random.uniform(low=0, high=0.5)
+        return score
+        #l, h = 0.1, 0.25
+        #if wd==1e-6     : score += np.random.uniform(low=l, high=h)
+        #if momentum==0.6: score += np.random.uniform(low=l, high=h)
+        #if dwell <= 10  : score += np.random.uniform(low=l, high=h)
+        #if rho <= 0.1   : score += np.random.uniform(low=l, high=h)
+        #if wait <= 100  : score += np.random.uniform(low=l, high=h)
+        #if reduction in ["mean", "median"]: score += np.random.uniform(low=l, high=h)
+        return score
+
     from joblib import Parallel, delayed
-    Parallel(n_jobs=64)(delayed(run)(
-        k, wd=wd, lr=lr, ibs=ibs, momentum=mom, dwell=d, rho=rho, wait=wa, reduction=red, noisy=False,
-    ) for k, (red, d, rho, wd, wa, lr, ibs, mom) in enumerate(params))
+    import random
+    scores = [
+        score(wd=wd, lr=lr, ibs=ibs, momentum=mom, dwell=d, rho=rho, wait=wa, reduction=red, noisy=False, mbs=mb
+    ) for red, d, rho, wd, wa, lr, ibs, mom, mb in params]
+    idx = np.argsort(scores)[::-1]
+    params = [params[i] for i in idx]
+    assert len(set(params)) == len(idx)
+    Parallel(n_jobs=100)(delayed(run)(
+        k, wd=wd, lr=lr, ibs=ibs, momentum=mom, dwell=d, rho=rho, wait=wa, reduction=red, noisy=False, mbs=mb
+    ) for k, (red, d, rho, wd, wa, lr, ibs, mom, mb) in enumerate(params))
     sys.exit(0)
 
     # adagrad uses <=426M

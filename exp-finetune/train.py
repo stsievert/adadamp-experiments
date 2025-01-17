@@ -421,7 +421,7 @@ def main(
             "tuning": int(tuning),
         }
         args.update(data_stats)
-        print(data_stats)
+        #print(data_stats)
 
     model = model.to(_device)
     _set_seed(args["random_state"])
