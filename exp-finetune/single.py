@@ -22,7 +22,7 @@ import torch.nn.functional as F
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
-from scipy.stats import loguniform
+from scipy.stats import loguniform, uniform
 from sklearn.model_selection import RandomizedSearchCV
 
 import train
@@ -114,74 +114,71 @@ class Wrapper(BaseEstimator):
         self.wait = wait
 
     def fit(self, X, y=None):
-        fname = f"d={dwell}-lr={lr}-m={momentum}-wd={wd}-ibs={ibs}-noisy={noisy}-reduction={reduction}-rho={rho}-wait={wait}-mbs={mbs}.pkl.zip"
-        out_f = DIR / "data-tuning" / "sweep"
-        if out_f / fname in out_f.iterdir():
-            print(f"Skipping {fname}, already in directory", flush=True)
-            return
-        try:
-            self._fit(X, y=y)
-        except Exception as e:
-            print(f"Failed with {e} for job w/ {dwell=}, {lr=}, {momentum=}, {wd=}", flush=True)
-            import logging
-            logging.exception(e)
-            return
-        print(f"    took {(time() - start) / 60:0.1f}min", flush=True)
-        pd.DataFrame(m.data_).to_pickle(out_f / fname)
-        return
+        params = {
+            k: v
+            for k, v in self.get_params().items()
+            if k not in ['X_test', 'X_train', 'model', 'seed', 'verbose', 'y_test', 'y_train', 'tuning', 'write']
+        }
+        params2 = [(k, params[k]) for k in sorted(list(params.keys()))]
+        ident = md5(tuple(clean(params2)))
+        seed = 1 + int(np.unique(np.asarray(X).flatten())[0])
+        fname = f"{ident}-{seed}.pkl.zip"
 
-    def _fit(self, X, y=None):
-        seed = int(np.unique(np.asarray(X).flatten())[0])
-        #print(X, seed)
-        keys = [
-            "damper",
-            "lr",
-            "initial_batch_size",
-            "max_batch_size",
-            "momentum",
-            "dampingdelay",
-            "dampingfactor",
-            "rho",
-            "dwell",
-            "weight_decay",
-            "nesterov",
-            "noisy",
-            "reduction",
-            "wait",
-        ]
-        kwargs = {k: getattr(self, k) for k in keys}
-        ident = md5(tuple(kwargs.items()))
+        kwargs = params
         if kwargs["damper"] == "geodamplr":
             kwargs["damper"] = "geodamp"
             kwargs["max_batch_size"] = self.initial_batch_size
 
-        data, train_data, model, test_set = train.main(
-            dataset=None,
-            model=self.model,
-            epochs=self.epochs,
-            train_data=(self.X_train, self.y_train),
-            test_data=(self.X_test, self.y_test),
-            tuning=self.tuning + seed,
-            test_freq=1,
-            cuda=True,
-            random_state=self.seed,
-            init_seed=self.seed,
-            verbose=self.verbose,
-            **kwargs,
-        )
-        self.data_ = data
-        self.model_ = model
-        self.train_data_ = train_data
+        out_dir = DIR / "data-tuning" / "sweep"
+        if out_dir / fname in out_dir.iterdir():
+            print(f"Skipping {fname}, already in directory", flush=True)
+            self.df_ = pd.read_pickle(out_dir / fname)
+            return self
 
-        if self.write:
-            out_dir = Path(__file__).absolute().parent / "data-tuning" / "runs"
-            out_data = pd.DataFrame(self.data_)
-            with open(out_dir / "{self.damper}-{ident}.pkl.zip", "wb") as f:
-                out_data.to_pickle(f)
+        start = time()
+        try:
+            data, train_data, model, test_set = train.main(
+                dataset=None,
+                model=self.model,
+                train_data=(self.X_train, self.y_train),
+                test_data=(self.X_test, self.y_test),
+                tuning=self.tuning + seed,
+                test_freq=1,
+                cuda=True,
+                random_state=self.seed,
+                init_seed=self.seed,
+                verbose=self.verbose,
+                **kwargs,
+            )
+            self.data_ = data
+            self.model_ = model
+            self.train_data_ = train_data
+        except Exception as e:
+            import logging
+            logging.exception(e)
+            return self
+        print(f"    took {(time() - start) / 60:0.1f}min", flush=True)
+        pd.DataFrame(data).to_pickle(out_dir / fname)
+        df = pd.DataFrame(data)
+        df.to_pickle(out_dir / fname)
+        self.df_ = df
         return self
 
     def score(self, *args, **kwargs):
-        return -1 * self.data_[-1]["test_loss"]
+        return -1 * self.df_.iloc[-1]["test_loss"]
+
+def clean(x):
+    if isinstance(x, list):
+        return [clean(i) for i in x]
+    if isinstance(x, tuple):
+        return tuple([clean(i) for i in x])
+    if isinstance(x, dict):
+        return {k: clean(v) for k, v in x.items()}
+    if isinstance(x, (np.int32, np.int64, np.float64, np.float32)):
+        return x.item()
+    if isinstance(x, np.ndarray):
+        return x.tolist()
+    return x
 
 if __name__ == "__main__":
     with open(DS_DIR / "embedding.pt", "rb") as f:
@@ -192,108 +189,57 @@ if __name__ == "__main__":
     assert tuple(y_train.shape) == (6667, ) and tuple(y_test.shape) == (3333, )
     assert len(np.unique(y_train)) == 70
 
-    est = MLP()
-    params = {k: x for k, x in est.named_parameters()}
-    nele = {k: x.nelement() for k, x in params.items()}
-    assert sum(nele.values()) == 401_870
+    #est = MLP()
+    #params = {k: x for k, x in est.named_parameters()}
+    #nele = {k: x.nelement() for k, x in params.items()}
+    #assert sum(nele.values()) == 401_870
     
-    base_search_space = {
-        "lr": loguniform(1e-5, 1e-1),
-        "initial_batch_size": [16, 32, 64, 96, 128, 160, 192, 224, 256],
-        "max_batch_size": [256, 512, 1024, 2048, 4096],#, 8192, 16384],
-        "dwell": [1, 2, 5, 10, 20, 50],
-        "weight_decay": loguniform(1e-8, 1e-4),
-        "momentum": loguniform_m1(1e-1, 1e-3),
-        "nesterov": [True],
+    #base_search_space = {
+    #    "lr": loguniform(1e-5, 1e-1),
+    #    "initial_batch_size": [16, 32, 64, 96, 128, 160, 192, 224, 256],
+    #    "max_batch_size": [256, 512, 1024, 2048, 4096],#, 8192, 16384],
+    #    "dwell": [1, 2, 5, 10, 20, 50],
+    #    "weight_decay": loguniform(1e-8, 1e-4),
+    #    "momentum": loguniform_m1(1e-1, 1e-3),
+    #    "nesterov": [True],
+    #}
+    #damper_search_space: Dict[str, Dict[str, Any]] = {
+    #    "adadamp": {},
+    #    "geodamp": {"dampingdelay": ints(1, 10),
+    #                "dampingfactor": ints(1, 21)},
+    #    "radadamp": {"rho": loguniform_m1(1e-5, 1e-1)},
+    #    "adagrad": {"lr": loguniform(1e-3, 1e-1)},
+    #}
+
+
+    space = {
+        "reduction": ["mean", "min", "median", "max"],
+        "dwell": [1, 3, 10, 30, 100],
+        "lr": loguniform(0.1e-3, 10e-3),
+        "momentum": uniform(0.05, 0.95),
+        "wait": [10, 30, 100, 300, 1000],
+        "rho": uniform(0,0.95),
+        "max_batch_size": [128, 256, 512, 1024, 2048, 4096],
+        "initial_batch_size": [8, 16, 32, 64, 128, 512],
+        "weight_decay": loguniform(1e-7, 1e-5),
     }
-    damper_search_space: Dict[str, Dict[str, Any]] = {
-        "adadamp": {},
-        "geodamp": {"dampingdelay": ints(1, 10),
-                    "dampingfactor": ints(1, 21)},
-        "radadamp": {"rho": loguniform_m1(1e-5, 1e-1)},
-        "adagrad": {"lr": loguniform(1e-3, 1e-1)},
-    }
-    m = Wrapper(
+    seeds = 1 + (np.arange(3 * 2) // 2).reshape(3, 2)
+    base = Wrapper(
         MLP(), X_train, y_train, X_test, y_test,
-        epochs=100, verbose=True, tuning=2,
+        epochs=200, verbose=False, tuning=2, write=False,
+        damper="padadamp",
     )
-
-    def run(k, *, wd, dwell, momentum, lr, ibs, noisy, wait, rho, reduction, mbs):
-        start = time()
-        kwargs = {"dwell": dwell, "lr": lr, "momentum": momentum, "weight_decay": wd}
-        m = Wrapper(
-            MLP(), X_train, y_train, X_test, y_test,
-            epochs=100, verbose=True, tuning=2,
+    #base.fit(seeds.astype(int))
+    for i in range(100):
+        search = RandomizedSearchCV(
+            base, space, n_iter=80, n_jobs=100, refit=False,
+            random_state=42 + i,
+            cv=[([0], [1, 2]), ([1], [1, 2]), ([2], [0, 1])],
         )
-        m.set_params(
-            damper="padadamp",
-            dwell=dwell,
-            initial_batch_size=ibs,
-            max_batch_size=mbs,
-            lr=lr,
-            momentum=momentum,
-            nesterov=True,
-            weight_decay=wd,
-            noisy=noisy,
-            wait=wait, rho=rho, reduction=reduction,
-        )
-        seeds = 3 + (np.arange(3 * 2) // 2).reshape(3, 2)
-
-        fname = f"d={dwell}-lr={lr}-m={momentum}-wd={wd}-ibs={ibs}-noisy={noisy}-reduction={reduction}-rho={rho}-wait={wait}-mbs={mbs}.pkl.zip"
-        out_f = DIR / "data-tuning" / "sweep"
-        if out_f / fname in out_f.iterdir():
-            print(f"Skipping {fname}, already in directory", flush=True)
-            return
-        print(f"Fitting {k}th param w/ {dwell=}, {lr=}, {momentum=}, {wd=}")
-        try:
-            m.fit(seeds.astype(int))
-        except Exception as e:
-            print(f"Failed with {e} for job w/ {dwell=}, {lr=}, {momentum=}, {wd=}", flush=True)
-            import logging
-            logging.exception(e)
-            return
-        print(f"    took {(time() - start) / 60:0.1f}min", flush=True)
-        pd.DataFrame(m.data_).to_pickle(out_f / fname)
-        return
-
-    # most important first
-    reduction = ["mean"]#, "min", "median", "max"] # 4
-    dwells = [1]#, 3, 10, 30, 100] # 5
-    wds = [1e-6]  # 2
-    wait = [10]#, 100, 1000]  # 3
-
-    lrs = [0.1e-3, 0.3e-3, 1e-3] # 3
-    ibs = [16, 32, 64, 128] # 4
-    momentums = [0.9, 0.6, 0.3, 0.1]  # 4
-    rho = [0, 0.05, 0.1, 0.2, 0.4, 0.8, 0.9, 0.95] # 8
-    mbs = [128, 256, 512, 1024, 2048, 4096]  # 6
-
-    params = list(itertools.product(reduction, dwells, rho, wds, wait, lrs, ibs, momentums, mbs))
-    print("len(params) =", len(params))
-
-    def score(*, wd, momentum, dwell, rho, reduction, wait, **kwargs):
-        score = np.random.uniform(low=0, high=0.5)
-        return score
-        #l, h = 0.1, 0.25
-        #if wd==1e-6     : score += np.random.uniform(low=l, high=h)
-        #if momentum==0.6: score += np.random.uniform(low=l, high=h)
-        #if dwell <= 10  : score += np.random.uniform(low=l, high=h)
-        #if rho <= 0.1   : score += np.random.uniform(low=l, high=h)
-        #if wait <= 100  : score += np.random.uniform(low=l, high=h)
-        #if reduction in ["mean", "median"]: score += np.random.uniform(low=l, high=h)
-        return score
-
-    from joblib import Parallel, delayed
-    import random
-    scores = [
-        score(wd=wd, lr=lr, ibs=ibs, momentum=mom, dwell=d, rho=rho, wait=wa, reduction=red, noisy=False, mbs=mb
-    ) for red, d, rho, wd, wa, lr, ibs, mom, mb in params]
-    idx = np.argsort(scores)[::-1]
-    params = [params[i] for i in idx]
-    assert len(set(params)) == len(idx)
-    Parallel(n_jobs=100)(delayed(run)(
-        k, wd=wd, lr=lr, ibs=ibs, momentum=mom, dwell=d, rho=rho, wait=wa, reduction=red, noisy=False, mbs=mb
-    ) for k, (red, d, rho, wd, wa, lr, ibs, mom, mb) in enumerate(params))
+        search.fit(seeds.astype(int))
+        print(f"\n\nsaving search {i}")
+        with open(OUT / "searches" / f"rs-{i}.pkl", "wb") as f:
+            pickle.dump(search, f)
     sys.exit(0)
 
     # adagrad uses <=426M
