@@ -30,7 +30,7 @@ print(train.__file__)
 
 DIR = Path(__file__).absolute().parent
 DS_DIR = DIR / "dataset"
-OUT = DIR / "data-tuning"
+OUT = DIR / "data-tuning-tmp"
 sys.path.extend([str(DIR.parent), str(DIR.parent / "train")])
 
 class MLP(nn.Module):
@@ -120,16 +120,17 @@ class Wrapper(BaseEstimator):
             if k not in ['X_test', 'X_train', 'model', 'seed', 'verbose', 'y_test', 'y_train', 'tuning', 'write']
         }
         params2 = [(k, params[k]) for k in sorted(list(params.keys()))]
-        ident = md5(tuple(clean(params2)))
+        #ident = md5(tuple(clean(params2)))
         seed = 1 + int(np.unique(np.asarray(X).flatten())[0])
+        ident = "-".join(f"{k}={v}" for k, v in clean(params2))
         fname = f"{ident}-{seed}.pkl.zip"
 
         kwargs = params
-        if kwargs["damper"] == "geodamplr":
-            kwargs["damper"] = "geodamp"
+        if "damplr" in kwargs["damper"]:
+            kwargs["damper"] = kwargs["damper"][:-2]
             kwargs["max_batch_size"] = self.initial_batch_size
 
-        out_dir = DIR / "data-tuning" / "sweep"
+        out_dir = OUT / "dampersweep"
         if out_dir / fname in out_dir.iterdir():
             print(f"Skipping {fname}, already in directory", flush=True)
             self.df_ = pd.read_pickle(out_dir / fname)
@@ -180,38 +181,7 @@ def clean(x):
         return x.tolist()
     return x
 
-if __name__ == "__main__":
-    with open(DS_DIR / "embedding.pt", "rb") as f:
-        data = torch.load(f, weights_only=True)
-    X_train, X_test, y_train, y_test = [data[k] for k in ["X_train", "X_test", "y_train", "y_test"]]
-
-    assert tuple(X_train.shape) == (6667, 768) and tuple(X_test.shape) == (3333, 768)
-    assert tuple(y_train.shape) == (6667, ) and tuple(y_test.shape) == (3333, )
-    assert len(np.unique(y_train)) == 70
-
-    #est = MLP()
-    #params = {k: x for k, x in est.named_parameters()}
-    #nele = {k: x.nelement() for k, x in params.items()}
-    #assert sum(nele.values()) == 401_870
-    
-    #base_search_space = {
-    #    "lr": loguniform(1e-5, 1e-1),
-    #    "initial_batch_size": [16, 32, 64, 96, 128, 160, 192, 224, 256],
-    #    "max_batch_size": [256, 512, 1024, 2048, 4096],#, 8192, 16384],
-    #    "dwell": [1, 2, 5, 10, 20, 50],
-    #    "weight_decay": loguniform(1e-8, 1e-4),
-    #    "momentum": loguniform_m1(1e-1, 1e-3),
-    #    "nesterov": [True],
-    #}
-    #damper_search_space: Dict[str, Dict[str, Any]] = {
-    #    "adadamp": {},
-    #    "geodamp": {"dampingdelay": ints(1, 10),
-    #                "dampingfactor": ints(1, 21)},
-    #    "radadamp": {"rho": loguniform_m1(1e-5, 1e-1)},
-    #    "adagrad": {"lr": loguniform(1e-3, 1e-1)},
-    #}
-
-
+def padadamp_tune():
     space = {
         "reduction": ["mean", "min", "median", "max"],
         "dwell": [1, 3, 10, 30, 100],
@@ -241,34 +211,83 @@ if __name__ == "__main__":
         with open(OUT / "searches" / f"rs-{i}.pkl", "wb") as f:
             pickle.dump(search, f)
     sys.exit(0)
+if __name__ == "__main__":
+    with open(DS_DIR / "embedding.pt", "rb") as f:
+        data = torch.load(f, weights_only=True)
+    X_train, X_test, y_train, y_test = [data[k] for k in ["X_train", "X_test", "y_train", "y_test"]]
+
+    assert tuple(X_train.shape) == (6667, 768) and tuple(X_test.shape) == (3333, 768)
+    assert tuple(y_train.shape) == (6667, ) and tuple(y_test.shape) == (3333, )
+    assert len(np.unique(y_train)) == 70
+
+    #est = MLP()
+    #params = {k: x for k, x in est.named_parameters()}
+    #nele = {k: x.nelement() for k, x in params.items()}
+    #assert sum(nele.values()) == 401_870
+    
+    base_search_space = {
+        "lr": loguniform(1e-5, 1e-1),
+        "initial_batch_size": [16, 32, 64, 96, 128, 160, 192, 224, 256],
+        "max_batch_size": [256, 512, 1024, 2048],#, 4096],#, 8192, 16384],
+        "dwell": [1, 2, 5, 10, 20, 50],
+        "weight_decay": loguniform(1e-7, 1e-4),
+        "momentum": loguniform_m1(1e-1, 1e-3),
+        "nesterov": [True],
+    }
+    damper_search_space: Dict[str, Dict[str, Any]] = {
+        "adadamp": {},
+        "geodamp": {"dampingdelay": ints(1, 10),
+                    "dampingfactor": ints(1, 21)},
+        "radadamp": {"rho": loguniform_m1(1e-5, 1e-1)},
+        "adagrad": {"lr": loguniform(1e-3, 1e-1)},
+    }
+
+    padadamp_space = {
+        "dwell": loguniform(10, 100),
+        "initial_batch_size": [8, 16, 32, 64],
+        "lr": loguniform(2e-4, 5e-3),
+        "max_batch_size": [64, 128, 256, 512, 1024, 2048, 4096],
+        "momentum": uniform(0.5, 0.99),
+        "reduction": ["min"],
+        "rho": uniform(0, 0.99),
+        "wait": loguniform(20, 1e3),
+        "weight_decay": loguniform(1e-7, 1e-5),
+    }
 
     # adagrad uses <=426M
-    n_params = 64
-    for damper in [
-        "geodamplr",
-        "adadampnn",
-        "geodamp",
-        "sgd",
-        "gd",
-        "adagrad",
-    ]:
-        print(f"## Training w/ {damper}")
-        space = deepcopy(base_search_space)
-        space.update(damper_search_space.get(damper, {}))
-        space.update({"damper": [damper]})
+    n_params = 125
+    for i in range(5, n_params // 5):
+        for damper in [
+            #"geodamplr",
+            #"geodamp",
+            #"adagrad",
+            #"padadamplr",
+            "adadampnn",
+            "padadamp",
+            #"gd",
+            #"sgd",
+        ]:
+            print(f"## Training w/ {damper}")
+            space = deepcopy(base_search_space)
+            space.update(damper_search_space.get(damper, {}))
+            if "padadamp" in damper:
+                space.update(padadamp_space)
+            space.update({"damper": [damper]})
 
-        est = MLP()
-        epochs = 200 if damper != "gd" else 500
-        m = Wrapper(
-            est, X_train, y_train, X_test, y_test,
-            epochs=epochs, verbose=False, tuning=1,
-        )
-        search = RandomizedSearchCV(
-            m, space, n_iter=n_params, n_jobs=32, refit=True, verbose=3,
-            random_state=42, cv=[([0], [1, 2]), ([1], [1, 2]), ([2], [0, 1])]
-        )
-        seeds = 1 + (np.arange(3 * 2) // 2).reshape(3, 2)
-        search.fit(seeds.astype(int))
+            epochs = 200 if damper != "gd" else 1000
+            #epochs = 4
+            #n_params = 5
+            m = Wrapper(
+                MLP(), X_train, y_train, X_test, y_test,
+                epochs=epochs, verbose=False, tuning=8,
+                write=False, damper=damper,
+            )
+            search = RandomizedSearchCV(
+                m, space, n_iter=n_params // 5, n_jobs=80, refit=False, verbose=3,
+                random_state=43 + i, cv=[([0], [1, 2]), ([1], [1, 2]), ([2], [0, 1])]
+            )
+            seeds = 4 + (np.arange(3 * 2) // 2).reshape(3, 2)
+            search.fit(seeds.astype(int))
 
-        with open(OUT / f"search-{damper}.pkl", "wb") as f:
-            pickle.dump(search, f)
+            with open(OUT / "dampersearch" / f"search-{damper}-{i}.pkl", "wb") as f:
+                pickle.dump(search, f)
