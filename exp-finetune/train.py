@@ -262,6 +262,7 @@ def main(
     noisy = False,
     reduction = "mean",
     wait: int = 10,
+    growth_rate=1e-3,
 ) -> Tuple[List[Dict], List[Dict], nn.Module, Dataset]:
     # Get (tuning, random_state, init_seed)
     assert int(tuning) or isinstance(tuning, bool)
@@ -451,6 +452,13 @@ def main(
             rho=args["rho"],
             dwell=args["dwell"],
             wait=args["wait"],
+            **opt_kwargs,
+        )
+    elif args["damper"].lower() == "pradadamp":
+        opt = PadaDamp(
+            *opt_args,
+            dwell=args["dwell"],
+            growth_rate=growth_rate["wait"],
             **opt_kwargs,
         )
     elif args["damper"].lower() == "adadampnn":
