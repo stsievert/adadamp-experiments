@@ -135,10 +135,10 @@ class Wrapper(BaseEstimator):
             kwargs["max_batch_size"] = self.initial_batch_size
 
         out_dir = OUT / "dampersweep"
-        if out_dir / fname in out_dir.iterdir():
-            print(f"Skipping {fname}, already in directory", flush=True)
-            self.df_ = pd.read_pickle(out_dir / fname)
-            return self
+        #if out_dir / fname in out_dir.iterdir():
+        #    print(f"Skipping {fname}, already in directory", flush=True)
+        #    self.df_ = pd.read_pickle(out_dir / fname)
+        #    return self
 
         start = time()
         try:
@@ -202,7 +202,7 @@ def single_run():
     }
     base = Wrapper(
         MLP(), X_train, y_train, X_test, y_test,
-        epochs=1000, verbose=False, tuning=2,
+        epochs=500, verbose=False, tuning=2,
         damper="padadamp",
         #damper="adadampnn",
     )
@@ -210,7 +210,7 @@ def single_run():
         lr=1e-3,
         weight_decay=1e-6,
         dwell=100,
-        growth_rate=6e-3,
+        growth_rate=0.01,
         initial_batch_size=128,
         max_batch_size=1024,
         #wait=500,
@@ -222,6 +222,7 @@ def single_run():
     for damper in ["padadamp", "padadamplr"]:#, "adadampnn", "adadampnnlr"]:
         seeds = 1 + (np.arange(3 * 2) // 2).reshape(3, 2)
         to_fit = clone(base)
+        print(to_fit.growth_rate)
         to_fit.set_params(damper=damper)
         to_fit.fit(seeds.astype(int))
 
@@ -252,9 +253,10 @@ if __name__ == "__main__":
     
     base_search_space = {
         "lr": loguniform(1e-5, 1e-1),
-        "initial_batch_size": [16, 32, 64, 96, 128, 160, 192, 224, 256],
-        "max_batch_size": [256, 512, 1024, 2048],#, 4096],#, 8192, 16384],
-        "dwell": [1, 2, 5, 10, 20, 50],
+        "initial_batch_size": [2**i for i in range(4, 9 + 1)],
+        "max_batch_size": [2**i for i in range(7, 13 + 1)],
+        #"dwell": [1, 2, 5, 10, 20, 50],
+        "dwell": loguniform(1, 100),
         "weight_decay": loguniform(1e-7, 1e-4),
         "momentum": loguniform_m1(1e-1, 1e-3),
         "nesterov": [True],
@@ -265,29 +267,33 @@ if __name__ == "__main__":
                     "dampingfactor": ints(1, 21)},
         "radadamp": {"rho": loguniform_m1(1e-5, 1e-1)},
         "adagrad": {"lr": loguniform(1e-3, 1e-1)},
+        "adadampnn": {
+
+        },
     }
 
     padadamp_space = {
-        "dwell": loguniform(1, 1000),
-        "initial_batch_size": [2**i for i in range(8, 9 + 1)],
-        "max_batch_size": [2**i for i in range(9, 13 + 1)],
-        "lr": loguniform(1e-4, 1e-2),
-        "momentum": loguniform_m1(1e-1, 5e-3),
-        "weight_decay": loguniform(1e-7, 1e-5),
+        #"lr": loguniform(1e-4, 1e-2),
+        #"momentum": loguniform_m1(1e-1, 5e-3),
+        #"weight_decay": loguniform(1e-7, 1e-5),
+        "lr": loguniform(0.5e-4, 0.5e-1),
+        "growth_rate": loguniform(1e-3, 1e2),
+        "momentum": loguniform_m1(5e-1, 1e-3),
     }
 
     # adagrad uses <=426M
     #n_params = 15
     n_params = 125
-    for i in range(0, n_params // 5):
+    for i in range(20, n_params):
         for damper in [
+            "adadampnn",
             "padadamp",
             "padadamplr",
-            "geodamplr",
-            "geodamp",
-            "adagrad",
-            "gd",
-            "sgd",
+            #"geodamplr",
+            #"geodamp",
+            #"adagrad",
+            #"gd",
+            #"sgd",
         ]:
             print(f"## Training w/ {damper}")
             space = deepcopy(base_search_space)
@@ -296,20 +302,18 @@ if __name__ == "__main__":
                 space.update(padadamp_space)
             space.update({"damper": [damper]})
 
-            epochs = 500 if damper != "gd" else 1000
-
-            #epochs = 4
+            epochs = 100 if damper != "gd" else 1000
 
             m = Wrapper(
                 MLP(), X_train, y_train, X_test, y_test,
-                epochs=epochs, verbose=False, tuning=8,
+                epochs=epochs, verbose=False, tuning=10,
                 damper=damper,
             )
             search = RandomizedSearchCV(
                 m, space, n_iter=n_params // 5, n_jobs=80, refit=False, verbose=3,
-                random_state=43 + i, cv=[([0], [1, 2]), ([1], [1, 2]), ([2], [0, 1])]
+                random_state=20 + i, cv=[([0], [1, 2]), ([1], [1, 2]), ([2], [0, 1])]
             )
-            seeds = 4 + (np.arange(3 * 2) // 2).reshape(3, 2)
+            seeds = 10 + (np.arange(3 * 2) // 2).reshape(3, 2)
             search.fit(seeds.astype(int))
 
             with open(OUT / "dampersearch" / f"search-{damper}-{i}.pkl", "wb") as f:

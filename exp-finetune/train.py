@@ -300,6 +300,7 @@ def main(
         "noisy": noisy,
         "reduction": reduction,
         "wait": wait,
+        "growth_rate": growth_rate,
     }
 
     no_cuda = not cuda
@@ -438,7 +439,7 @@ def main(
     n_data = len(train_set)
 
     opt_args = [model, train_set, optimizer]
-    opt_kwargs = {k: args[k] for k in ["initial_batch_size", "max_batch_size", "random_state"]}
+    opt_kwargs = {k: args[k] for k in ["initial_batch_size", "max_batch_size", "random_state", "dwell"]}
     opt_kwargs["device"] = device
     if dataset in ["synthetic", "autoencoder"]:
         opt_kwargs["loss"] = F.mse_loss
@@ -448,24 +449,21 @@ def main(
     if args["damper"].lower() == "padadamp":
         opt = PadaDamp(
             *opt_args,
-            reduction=args["reduction"],
-            rho=args["rho"],
-            dwell=args["dwell"],
-            wait=args["wait"],
+            growth_rate=args["growth_rate"],
             **opt_kwargs,
         )
     elif args["damper"].lower() == "pradadamp":
-        opt = PadaDamp(
+        opt = PrAdaDamp(
             *opt_args,
-            dwell=args["dwell"],
-            growth_rate=growth_rate["wait"],
+            reduction=args["reduction"],
+            rho=args["rho"],
+            wait=args["wait"],
             **opt_kwargs,
         )
     elif args["damper"].lower() == "adadampnn":
         opt = AdaDampNN(
             *opt_args,
-            batch_growth_rate=args["batch_growth_rate"],
-            dwell=args["dwell"],
+            #dwell=args["dwell"],  # already in opt_kwargs
             noisy=args["noisy"],
             **opt_kwargs,
         )
