@@ -3,7 +3,6 @@ from types import SimpleNamespace
 from typing import Any, Dict, List, Union, Optional, Tuple
 import hashlib
 import pickle
-from pprint import pprint
 import itertools
 from copy import copy
 from datetime import datetime
@@ -35,6 +34,7 @@ from torch.utils.data.dataset import Dataset
 
 from adadamp import (
     AdaDamp,
+    AdaDampNN,
     GeoDamp,
     PadaDamp,
     BaseDamper,
@@ -240,7 +240,7 @@ def main(
     epochs: int = 6,
     verbose: Union[int, bool] = False,
     lr: float = 1.0,
-    cuda: bool = False,
+    cuda: bool = True,
     random_state: Optional[int] = None,  # seed to pass to BaseDamper
     init_seed: Optional[int] = None,  # seed for initialization
     tuning: bool = True,  # tuning seed
@@ -258,6 +258,11 @@ def main(
     momentum: Optional[Union[float, int]] = 0,
     nesterov: bool = False,
     weight_decay: float=0,
+    train_data=None, test_data=None,
+    noisy = False,
+    reduction = "mean",
+    wait: int = 10,
+    growth_rate=1e-3,
 ) -> Tuple[List[Dict], List[Dict], nn.Module, Dataset]:
     # Get (tuning, random_state, init_seed)
     assert int(tuning) or isinstance(tuning, bool)
@@ -292,16 +297,19 @@ def main(
         "nesterov": nesterov,
         "momentum": momentum,
         "weight_decay": weight_decay,
+        "noisy": noisy,
+        "reduction": reduction,
+        "wait": wait,
+        "growth_rate": growth_rate,
     }
-    print("286", flush=True)
-    pprint(args)
 
     no_cuda = not cuda
     args["ident"] = ident(args)
     args["tuning"] = tuning
 
-    use_cuda = not args["no_cuda"] and torch.cuda.is_available()
-    device = "cuda" if use_cuda else "cpu"
+    use_cuda = cuda and torch.cuda.is_available()
+    cid = random.choice([0, 1])
+    device = f"cuda:{cid}" if use_cuda else "cpu"
     _device = torch.device(device)
     _set_seed(args["init_seed"])
 
@@ -314,7 +322,6 @@ def main(
     ]
     transform_test = [transforms.ToTensor(), transforms.Normalize((mean,), (std,))]
     itransform = transforms.Normalize(mean=(-mean / std), std=1 / std)
-    print("302", flush=True)
     if dataset == "fashionmnist":
         _dir = "_traindata/fashionmnist/"
         train_set = FashionMNIST(
@@ -385,11 +392,13 @@ def main(
         # 220M parameters with (32 * 32, 200, n_input=3)
         # 65M parameters with 32 * 16, 400, n_input=3
         # 400K params quick and good
+    elif train_data is not None and test_data is not None:
+        train_set = TensorDataset(*train_data)
+        test_set = TensorDataset(*test_data)
     else:
         raise ValueError(
             f"dataset={dataset} not in ['fashionmnist', 'cifar10', 'synth']"
         )
-    print("350", flush=True)
     if tuning:
         train_size = int(0.8 * len(train_set))
         test_size = len(train_set) - train_size
@@ -414,7 +423,7 @@ def main(
             "tuning": int(tuning),
         }
         args.update(data_stats)
-        pprint(data_stats)
+        #print(data_stats)
 
     model = model.to(_device)
     _set_seed(args["random_state"])
@@ -430,27 +439,32 @@ def main(
     n_data = len(train_set)
 
     opt_args = [model, train_set, optimizer]
-    opt_kwargs = {k: args[k] for k in ["initial_batch_size", "max_batch_size", "random_state"]}
+    opt_kwargs = {k: args[k] for k in ["initial_batch_size", "max_batch_size", "random_state", "dwell"]}
     opt_kwargs["device"] = device
     if dataset in ["synthetic", "autoencoder"]:
         opt_kwargs["loss"] = F.mse_loss
     elif dataset == "cifar10":
         opt_kwargs["loss"] = F.cross_entropy
-    if args["damper"].lower() == "padadamp":
-        if approx_rate:
-            assert isinstance(max_batch_size, int)
-            BM = max_batch_size
-            B0 = initial_batch_size
-            e = epochs
-            n = n_data
-            r_hat = 4/3 * (BM - B0) * (B0 + 2*BM + 3)
-            r_hat /= (2*BM - 2*B0 + 3 * e * n)
-            args["batch_growth_rate"] = r_hat
 
+    if args["damper"].lower() == "padadamp":
         opt = PadaDamp(
             *opt_args,
-            batch_growth_rate=args["batch_growth_rate"],
-            dwell=args["dwell"],
+            growth_rate=args["growth_rate"],
+            **opt_kwargs,
+        )
+    elif args["damper"].lower() == "pradadamp":
+        opt = PrAdaDamp(
+            *opt_args,
+            reduction=args["reduction"],
+            rho=args["rho"],
+            wait=args["wait"],
+            **opt_kwargs,
+        )
+    elif args["damper"].lower() == "adadampnn":
+        opt = AdaDampNN(
+            *opt_args,
+            #dwell=args["dwell"],  # already in opt_kwargs
+            noisy=args["noisy"],
             **opt_kwargs,
         )
     elif args["damper"].lower() == "radadamp":
@@ -485,7 +499,7 @@ def main(
     else:
         raise ValueError(f"argument damper={damper} not recognized")
     if dataset == "synthetic":
-        pprint(data_stats)
+        print(data_stats)
         opt._meta["best_train_loss"] = data_stats["best_train_loss"]
 
     data, train_data = experiment.run(
@@ -497,7 +511,7 @@ def main(
         test_freq=test_freq,
         train_stats=True,#dataset == "synthetic",
         verbose=verbose,
-        device="cuda" if use_cuda else "cpu",
+        device=_device,
     )
     return data, train_data, model, test_set
 
