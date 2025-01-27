@@ -366,9 +366,10 @@ def main(
         # 220M parameters with (32 * 32, 200, n_input=3)
         # 65M parameters with 32 * 16, 400, n_input=3
         # 400K params quick and good
-        # policy = v2.AutoAugmentPolicy.SVHN
+        policy = v2.AutoAugmentPolicy.SVHN
 
         transform_train = [
+            #v2.AutoAugment(policy)
             v2.ToImage(),
             v2.ToDtype(torch.float32, scale=True),
             #v2.RandomHorizontalFlip(),
@@ -376,12 +377,12 @@ def main(
             v2.ColorJitter(),
             v2.RandomGrayscale(),
             v2.GaussianNoise(sigma=0.01),
-            v2.Lambda(scale),
+            #v2.Lambda(scale),
         ]
         transform_test = [
             v2.ToImage(),
             v2.ToDtype(torch.float32, scale=True),
-            v2.Lambda(scale),
+            #v2.Lambda(scale),
         ]
 
         _dir = "_traindata/svhn/"
