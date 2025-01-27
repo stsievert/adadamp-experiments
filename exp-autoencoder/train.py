@@ -359,13 +359,20 @@ def main(
         args.update(data_stats)
         model = LinearNet(data_kwargs["d"])
     elif dataset == "autoencoder":
+        from model import VAE
+        model = VAE(z_dim=25)
+        n_params = sum(p.detach().numpy().size for p in model.parameters())
+        print(f"n_params = {n_params / 1e6:0.1f}M")
+        # 220M parameters with (32 * 32, 200, n_input=3)
+        # 65M parameters with 32 * 16, 400, n_input=3
+        # 400K params quick and good
         # policy = v2.AutoAugmentPolicy.SVHN
 
         transform_train = [
             v2.ToImage(),
             v2.ToDtype(torch.float32, scale=True),
-            v2.RandomHorizontalFlip(),
-            v2.RandomVerticalFlip(),
+            #v2.RandomHorizontalFlip(),
+            #v2.RandomVerticalFlip(),
             v2.ColorJitter(),
             v2.RandomGrayscale(),
             v2.GaussianNoise(sigma=0.01),
@@ -387,12 +394,7 @@ def main(
         )
         test_set = NoisyImages(_dir, split="test", transform=v2.Compose(transform_test), download=True)
         # TODO: change to ResNet18 VAE
-        model = Autoencoder(32, 100, num_input_channels=3)
-        n_params = sum(p.detach().numpy().size for p in model.parameters())
-        print(f"n_params = {n_params / 1e6:0.1f}M")
-        # 220M parameters with (32 * 32, 200, n_input=3)
-        # 65M parameters with 32 * 16, 400, n_input=3
-        # 400K params quick and good
+        #model = Autoencoder(32, 100, num_input_channels=3)
     elif train_data is not None and test_data is not None:
         train_set = TensorDataset(*train_data)
         test_set = TensorDataset(*test_data)
@@ -433,6 +435,8 @@ def main(
         optimizer = optim.Adagrad(model.parameters(), lr=args.get("lr", 0.01))
     elif args["damper"] == "adadelta":
         optimizer = optim.Adadelta(model.parameters(), rho=rho)
+    elif args["damper"] == "adamw":
+        optimizer = optim.AdamW(model.parameters(), lr=args["lr"], weight_decay=args["weight_decay"])
     else:
         if not args["nesterov"]:
             assert args["momentum"] == 0
