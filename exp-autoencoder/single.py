@@ -14,6 +14,7 @@ from copy import deepcopy
 import json
 import itertools
 from time import time
+import os
 
 import torch
 import torch.nn as nn
@@ -27,6 +28,9 @@ from sklearn.model_selection import RandomizedSearchCV
 
 import train
 print(train.__file__)
+
+CUDA_VISIBLE_DEVICES = int(os.environ.get("CUDA_VISIBLE_DEVICES", "0"))
+print(f"{CUDA_VISIBLE_DEVICES=}")
 
 DIR = Path(__file__).absolute().parent
 DS_DIR = DIR / "dataset"
@@ -90,7 +94,7 @@ class Wrapper(BaseEstimator):
         self.wait = wait
         self.growth_rate = growth_rate
 
-    def fit(self, X, y=None):
+    def fit(self, X=None, y=None):
         params = {
             k: v
             for k, v in self.get_params().items()
@@ -104,7 +108,7 @@ class Wrapper(BaseEstimator):
             for k, v in clean(params2)
         )
         #ident = f"{params['damper']}-tune"
-        fname = f"{ident}-{seed}.pkl.zip"
+        fname = f"{ident}-{seed}-{CUDA_VISIBLE_DEVICES}.pkl.zip"
 
         kwargs = params
         if "damplr" in kwargs["damper"] or "dampnnlr" in kwargs["damper"]:
@@ -112,31 +116,31 @@ class Wrapper(BaseEstimator):
             kwargs["max_batch_size"] = self.initial_batch_size
 
         out_dir = OUT / "dampersweep"
-        #if out_dir / fname in out_dir.iterdir():
-        #    print(f"Skipping {fname}, already in directory", flush=True)
-        #    self.df_ = pd.read_pickle(out_dir / fname)
-        #    return self
+        if out_dir / fname in out_dir.iterdir():
+            print(f"Skipping {fname}, already in directory", flush=True)
+            self.df_ = pd.read_pickle(out_dir / fname)
+            return self
 
         start = time()
-        #try:
-        data, train_data, model, test_set = train.main(
-            dataset="autoencoder",
-            model=None,
-            tuning=self.tuning + seed,
-            test_freq=1,
-            cuda=True,
-            random_state=self.seed,
-            init_seed=self.seed,
-            verbose=self.verbose,
-            **kwargs,
-        )
-        self.data_ = data
-        self.model_ = model
-        self.train_data_ = train_data
-        #except Exception as e:
-        #    import logging
-        #    logging.exception(e)
-        #    return self
+        try:
+            data, train_data, model, test_set = train.main(
+                dataset="autoencoder",
+                model=None,
+                tuning=self.tuning + seed,
+                test_freq=1,
+                cuda=True,
+                random_state=self.seed,
+                init_seed=self.seed,
+                verbose=self.verbose,
+                **kwargs,
+            )
+            self.data_ = data
+            self.model_ = model
+            self.train_data_ = train_data
+        except Exception as e:
+            import logging
+            logging.exception(e)
+            return self
         print(f"    took {(time() - start) / 60:0.1f}min", flush=True)
         pd.DataFrame(data).to_pickle(out_dir / fname)
         df = pd.DataFrame(data)
@@ -161,68 +165,95 @@ def clean(x):
     return x
 
 if __name__ == "__main__":
+
     base_search_space = {
-        "lr": loguniform(1e-5, 1e-1),
+        "lr": loguniform(1e-4, 1e-1),
         "initial_batch_size": [2**i for i in range(4, 9 + 1)],
         "max_batch_size": [2**i for i in range(7, 13 + 1)],
-        #"dwell": [1, 2, 5, 10, 20, 50],
-        "dwell": loguniform(1, 100),
+        "dwell": loguniform(1, 1e3),
+        "wait": loguniform(1, 1e3),
         "weight_decay": loguniform(1e-7, 1e-4),
         "momentum": loguniform_m1(1e-1, 1e-3),
         "nesterov": [True],
     }
+    static_ibs = [2**i for i in range(5, 9 + 1)]
     damper_search_space: Dict[str, Dict[str, Any]] = {
-        "adadamp": {},
-        "geodamp": {"dampingdelay": ints(1, 10),
-                    "dampingfactor": ints(1, 21)},
-        "radadamp": {"rho": loguniform_m1(1e-5, 1e-1)},
-        "adagrad": {"lr": loguniform(1e-3, 1e-1)},
+        "adagrad": {
+            "lr": loguniform(1e-3, 1e-1),
+            "initial_batch_size": static_ibs,
+        },
+        "adamw": {
+            "lr": loguniform(1e-3, 1e-1),
+            "weight_decay": loguniform(1e-3, 1e-1),
+            "initial_batch_size": static_ibs,
+        },
+        "nadam": {
+            "lr": loguniform(0.5e-3, 1e-2),
+            "initial_batch_size": static_ibs,
+        },
+        "geodamp": {
+            "dampingdelay": ints(1, 10),
+            "dampingfactor": ints(1, 21),
+        },
+        "radadamp": {
+            "reduction": ["min", "mean", "median"],
+            "rho": uniform(0, 0.99),
+            "momentum": loguniform_m1(5e-1, 1e-3),
+        },
         "padadamp": {
             "lr": loguniform(0.5e-4, 0.5e-1),
             "growth_rate": loguniform(1e-3, 1e2),
             "momentum": loguniform_m1(5e-1, 1e-3),
         },
     }
+    for damper in ["radadamp", "padadamp", "geodamp"]:
+        damper_search_space[f"{damper}lr"] = damper_search_space[damper]
 
-    # adagrad uses <=426M
-    #n_params = 15
+    # LR      |BS      |damper
+    # passive |static  |geodamplr
+    # static  |passive |geodamp
+    # static  |static  |GD, SGD
+    # passive |passive |geodamp (small MBS)
+    # adaptive|static  |adamw
+    # static  |adaptive|radadamp
+    # adaptive|adaptive|adadagrad, radadamp (small MBS)
+    #
+    # adaptive and passive aren't mixed
+
     n_params = 125
+    n_params = 4
     for i in range(1):
         for damper in [
-            "padadamp",
-            "radadamp",
-            #"padadamplr",
             #"geodamplr",
             #"geodamp",
-            #"adagrad",
-            #"gd",
-            #"sgd",
+            #"padadamp",
+            #"padadamplr",
+            #"radadamp",
+            #"radadamplr",
+            "adamw",
+            #"nadam",
+            "adagrad",
+            "gd",
+            "sgd",
         ]:
-            print(f"## Training w/ {damper}")
+            print(f"\n\n## {i}th tuning run for {damper}\n\n")
             space = deepcopy(base_search_space)
             space.update(damper_search_space.get(damper, {}))
-            if "damplr" in damper:
-                space.update(damper_search_space.get(damper[:-2], {}))
             space.update({"damper": [damper]})
 
             epochs = 100 if damper != "gd" else 1000
+            epochs = 4
 
             seeds = 10 + (np.arange(3 * 2) // 2).reshape(3, 2)
             m = Wrapper(
-                epochs=epochs, verbose=False, tuning=10,
-                damper=damper,
+                epochs=epochs, verbose=False, tuning=10, damper=damper,
             )
-            m.set_params(
-                lr=1e-3,
+            search = RandomizedSearchCV(
+                m, space, n_iter=max(4, n_params // 5), #n_jobs=1,#2 * 2,
+                refit=False, verbose=3,
+                random_state=20 + i + CUDA_VISIBLE_DEVICES, cv=[([0], [1, 2])],
             )
-            print("227")
-            m.fit(seeds.astype(int))
-            print("228")
-            #search = RandomizedSearchCV(
-            #    m, space, n_iter=n_params // 5, n_jobs=80, refit=False, verbose=3,
-            #    random_state=20 + i, cv=[([0], [1, 2]), ([1], [1, 2]), ([2], [0, 1])]
-            #)
-            #search.fit(seeds.astype(int))
+            search.fit(seeds.astype(int))
 
-            with open(OUT / "dampersearch" / f"search-{damper}-{i}.pkl", "wb") as f:
+            with open(OUT / "dampersearch" / f"search-{damper}-{i}-{CUDA_VISIBLE_DEVICES}.pkl", "wb") as f:
                 pickle.dump(search, f)

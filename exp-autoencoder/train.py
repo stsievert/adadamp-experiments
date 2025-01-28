@@ -222,9 +222,7 @@ def _set_seed(seed):
     return True
 
 
-class NoisyImages(torchvision.datasets.SVHN):  # good; ~3 bits => can be compressed
-#class NoisyImages(torchvision.datasets.CIFAR10):  # no one can criticize this
-#class NoisyImages(torchvision.datasets.Caltech256):  # too long
+class Images(torchvision.datasets.SVHN):  # good; ~3 bits => can be compressed
     def __getitem__(self, *args, **kwargs):
         image, target = super().__getitem__(*args, **kwargs)
         return image, image
@@ -308,7 +306,9 @@ def main(
     args["tuning"] = tuning
 
     use_cuda = cuda and torch.cuda.is_available()
-    cid = random.choice([0, 1])
+    # use CUDA_VISIBLE_DEVICE=0 python single.py
+    # use CUDA_VISIBLE_DEVICE=1 python single.py
+    cid = 0 # random.choice([0, 1])
     device = f"cuda:{cid}" if use_cuda else "cpu"
     _device = torch.device(device)
     _set_seed(args["init_seed"])
@@ -360,40 +360,31 @@ def main(
         model = LinearNet(data_kwargs["d"])
     elif dataset == "autoencoder":
         from model import VAE
-        model = VAE(z_dim=25)
+        model = VAE(z_dim=300)
         n_params = sum(p.detach().numpy().size for p in model.parameters())
         print(f"n_params = {n_params / 1e6:0.1f}M")
         # 220M parameters with (32 * 32, 200, n_input=3)
         # 65M parameters with 32 * 16, 400, n_input=3
         # 400K params quick and good
-        policy = v2.AutoAugmentPolicy.SVHN
-
         transform_train = [
-            #v2.AutoAugment(policy)
             v2.ToImage(),
+            v2.RandomHorizontalFlip(),
+            v2.RandomVerticalFlip(),
             v2.ToDtype(torch.float32, scale=True),
-            #v2.RandomHorizontalFlip(),
-            #v2.RandomVerticalFlip(),
-            v2.ColorJitter(),
-            v2.RandomGrayscale(),
-            v2.GaussianNoise(sigma=0.01),
-            #v2.Lambda(scale),
+            v2.AutoAugment(v2.AutoAugmentPolicy.SVHN),
         ]
         transform_test = [
             v2.ToImage(),
             v2.ToDtype(torch.float32, scale=True),
-            #v2.Lambda(scale),
         ]
 
         _dir = "_traindata/svhn/"
-        #train_set = NoisyImages(
-        #    _dir, train=True, transform=v2.Compose(transform_train), download=True,
-        #)
-        #test_set = NoisyImages(_dir, train=False, transform=v2.Compose(transform_test), download=True)
-        train_set = NoisyImages(
+        train_set = Images(
             _dir, split="train", transform=v2.Compose(transform_train), download=True,
         )
-        test_set = NoisyImages(_dir, split="test", transform=v2.Compose(transform_test), download=True)
+        test_set = Images(
+            _dir, split="test", transform=v2.Compose(transform_test), download=True
+        )
         # TODO: change to ResNet18 VAE
         #model = Autoencoder(32, 100, num_input_channels=3)
     elif train_data is not None and test_data is not None:
@@ -438,6 +429,8 @@ def main(
         optimizer = optim.Adadelta(model.parameters(), rho=rho)
     elif args["damper"] == "adamw":
         optimizer = optim.AdamW(model.parameters(), lr=args["lr"], weight_decay=args["weight_decay"])
+    elif args["damper"] == "nadam":
+        optimizer = optim.NAdam(model.parameters(), lr=args["lr"], weight_decay=args["weight_decay"], decoupled_weight_decay=True)
     else:
         if not args["nesterov"]:
             assert args["momentum"] == 0
@@ -498,7 +491,7 @@ def main(
     elif args["damper"].lower() == "gd":
         opt = GradientDescent(*opt_args, **opt_kwargs)
     elif (
-        args["damper"].lower() in ["adagrad", "adadelta", "sgd", "gd"]
+        args["damper"].lower() in ["adagrad", "adadelta", "sgd", "gd", "adamw", "nadam"]
         or args["damper"] is None
     ):
         opt = BaseDamper(*opt_args, **opt_kwargs)

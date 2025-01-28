@@ -149,11 +149,9 @@ class VAE(nn.Module):
         self.decoder = ResNet18Dec(z_dim=z_dim)
 
     def forward(self, x):
-        print(f"beg: {x.min():0.3f}, {x.max():0.3f}...", end="    ")
         mean, logvar = self.encoder(x)
         z = self.reparameterize(mean, logvar)
         x = self.decoder(z)
-        print(f"end: {x.min():0.3f}, {x.max():0.3f} w/ {x.shape}")
         return x
     
     @staticmethod
