@@ -165,9 +165,8 @@ def clean(x):
     return x
 
 if __name__ == "__main__":
-
     base_search_space = {
-        "lr": loguniform(1e-4, 1e-1),
+        "lr": loguniform(1e-4, 1e-2),
         "initial_batch_size": [2**i for i in range(4, 9 + 1)],
         "max_batch_size": [2**i for i in range(7, 13 + 1)],
         "dwell": loguniform(1, 1e3),
@@ -177,9 +176,12 @@ if __name__ == "__main__":
         "nesterov": [True],
     }
     static_ibs = [2**i for i in range(5, 9 + 1)]
+    def rv_bounds(*, low, high):
+        assert low < high, f"{low=} > {high=}"
+        return low, high - low
     damper_search_space: Dict[str, Dict[str, Any]] = {
         "adagrad": {
-            "lr": loguniform(1e-3, 1e-1),
+            "lr": loguniform(1e-4, 1e-2),
             "initial_batch_size": static_ibs,
         },
         "adamw": {
@@ -196,14 +198,14 @@ if __name__ == "__main__":
             "dampingfactor": ints(1, 21),
         },
         "radadamp": {
-            "reduction": ["min", "mean", "median"],
-            "rho": uniform(0, 0.99),
-            "momentum": loguniform_m1(5e-1, 1e-3),
+            "reduction": ["min", "mean"], # "median"],
+            "rho": uniform(rv_bounds(low=0.2, high=0.99)),
+            "momentum": uniform(rv_bounds(low=0.5, high=0.999)),
         },
         "padadamp": {
-            "lr": loguniform(0.5e-4, 0.5e-1),
+            "lr": loguniform(0.5e-4, 1e-2),
             "growth_rate": loguniform(1e-3, 1e2),
-            "momentum": loguniform_m1(5e-1, 1e-3),
+            "momentum": uniform(rv_bounds(low=0.5, high=0.999)),
         },
     }
     for damper in ["radadamp", "padadamp", "geodamp"]:
@@ -220,18 +222,16 @@ if __name__ == "__main__":
     #
     # adaptive and passive aren't mixed
 
-    n_params = 125
     for i in range(100):
         for damper in [
             "geodamp",
             "padadamp",
             "radadamp",
             "geodamplr",
+            "adamw",
+            "adagrad",
             "padadamplr",
             "radadamplr",
-            "adamw",
-            #"nadam",
-            "adagrad",
             "gd",
             "sgd",
         ]:
@@ -240,17 +240,17 @@ if __name__ == "__main__":
             space.update(damper_search_space.get(damper, {}))
             space.update({"damper": [damper]})
 
-            epochs = 20 if damper != "gd" else 1000
+            epochs = 100 if damper != "gd" else 1000
 
-            seeds = 10 + (np.arange(3 * 2) // 2).reshape(3, 2)
+            seeds = 12 + (np.arange(3 * 2) // 2).reshape(3, 2)
             m = Wrapper(
-                epochs=epochs, verbose=False, tuning=10, damper=damper,
+                epochs=epochs, verbose=False, tuning=11, damper=damper,
             )
             n_jobs = 10
             search = RandomizedSearchCV(
                 m, space, n_iter=n_jobs, n_jobs=n_jobs,
                 refit=False, verbose=3,
-                random_state=20 + i + CUDA_VISIBLE_DEVICES, cv=[([0], [1, 2])],
+                random_state=24 + i + CUDA_VISIBLE_DEVICES, cv=[([0], [1, 2])],
             )
             search.fit(seeds.astype(int))
 
