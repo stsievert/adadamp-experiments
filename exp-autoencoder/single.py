@@ -221,15 +221,14 @@ if __name__ == "__main__":
     # adaptive and passive aren't mixed
 
     n_params = 125
-    n_params = 4
-    for i in range(1):
+    for i in range(100):
         for damper in [
-            #"geodamplr",
-            #"geodamp",
-            #"padadamp",
-            #"padadamplr",
-            #"radadamp",
-            #"radadamplr",
+            "geodamp",
+            "padadamp",
+            "radadamp",
+            "geodamplr",
+            "padadamplr",
+            "radadamplr",
             "adamw",
             #"nadam",
             "adagrad",
@@ -241,15 +240,15 @@ if __name__ == "__main__":
             space.update(damper_search_space.get(damper, {}))
             space.update({"damper": [damper]})
 
-            epochs = 100 if damper != "gd" else 1000
-            epochs = 4
+            epochs = 20 if damper != "gd" else 1000
 
             seeds = 10 + (np.arange(3 * 2) // 2).reshape(3, 2)
             m = Wrapper(
                 epochs=epochs, verbose=False, tuning=10, damper=damper,
             )
+            n_jobs = 10
             search = RandomizedSearchCV(
-                m, space, n_iter=max(4, n_params // 5), #n_jobs=1,#2 * 2,
+                m, space, n_iter=n_jobs, n_jobs=n_jobs,
                 refit=False, verbose=3,
                 random_state=20 + i + CUDA_VISIBLE_DEVICES, cv=[([0], [1, 2])],
             )
