@@ -175,7 +175,7 @@ if __name__ == "__main__":
         "momentum": loguniform_m1(1e-1, 1e-3),
         "nesterov": [True],
     }
-    static_ibs = [2**i for i in range(5, 9 + 1)]
+    static_ibs = [2**i for i in range(4, 7 + 1)]
     def rv_bounds(*, low, high):
         assert low < high, f"{low=} > {high=}"
         return low, high - low
@@ -194,8 +194,8 @@ if __name__ == "__main__":
             "initial_batch_size": static_ibs,
         },
         "geodamp": {
-            "dampingdelay": ints(1, 10),
-            "dampingfactor": ints(1, 21),
+            "dampingdelay": ints(10, 20),
+            "dampingfactor": ints(2, 5),
         },
         "radadamp": {
             "reduction": ["min", "mean"], # "median"],
@@ -207,6 +207,9 @@ if __name__ == "__main__":
             "growth_rate": loguniform(1e-3, 1e2),
             "momentum": uniform(rv_bounds(low=0.5, high=0.999)),
         },
+        "nadam": {
+            "lr": loguniform(0.5e-3, 10e-3),
+        },
     }
     for damper in ["radadamp", "padadamp", "geodamp"]:
         damper_search_space[f"{damper}lr"] = damper_search_space[damper]
@@ -214,7 +217,7 @@ if __name__ == "__main__":
     # LR      |BS      |damper
     # passive |static  |geodamplr
     # static  |passive |geodamp
-    # static  |static  |GD, SGD
+    # static  |static  |~~GD, SGD~~
     # passive |passive |geodamp (small MBS)
     # adaptive|static  |adamw
     # static  |adaptive|radadamp
@@ -222,37 +225,38 @@ if __name__ == "__main__":
     #
     # adaptive and passive aren't mixed
 
+    dampers = [
+        "geodamp",
+        "padadamp",
+        "radadamp",
+        "geodamplr",
+        "adamw",
+        "adagrad",
+        "padadamplr",
+        "radadamplr",
+        #"gd",
+        #"sgd",
+    ]
+    damper = dampers[CUDA_VISIBLE_DEVICES]
     for i in range(100):
-        for damper in [
-            "geodamp",
-            "padadamp",
-            "radadamp",
-            "geodamplr",
-            "adamw",
-            "adagrad",
-            "padadamplr",
-            "radadamplr",
-            "gd",
-            "sgd",
-        ]:
-            print(f"\n\n## {i}th tuning run for {damper}\n\n")
-            space = deepcopy(base_search_space)
-            space.update(damper_search_space.get(damper, {}))
-            space.update({"damper": [damper]})
+        print(f"\n\n## {i}th tuning run for {damper}\n\n")
+        space = deepcopy(base_search_space)
+        space.update(damper_search_space.get(damper, {}))
+        space.update({"damper": [damper]})
 
-            epochs = 100 if damper != "gd" else 1000
+        epochs = 100 if damper != "gd" else 1000
 
-            seeds = 12 + (np.arange(3 * 2) // 2).reshape(3, 2)
-            m = Wrapper(
-                epochs=epochs, verbose=False, tuning=11, damper=damper,
-            )
-            n_jobs = 10
-            search = RandomizedSearchCV(
-                m, space, n_iter=n_jobs, n_jobs=n_jobs,
-                refit=False, verbose=3,
-                random_state=24 + i + CUDA_VISIBLE_DEVICES, cv=[([0], [1, 2])],
-            )
-            search.fit(seeds.astype(int))
+        seeds = 100 + (np.arange(3 * 2) // 2).reshape(3, 2)
+        m = Wrapper(
+            epochs=epochs, verbose=False, tuning=11, damper=damper,
+        )
+        n_jobs = 4
+        search = RandomizedSearchCV(
+            m, space, n_iter=2 * n_jobs, n_jobs=n_jobs,
+            refit=False, verbose=3,
+            random_state=100 + i + CUDA_VISIBLE_DEVICES, cv=[([0], [1, 2])],
+        )
+        search.fit(seeds.astype(int))
 
-            with open(OUT / "dampersearch" / f"search-{damper}-{i}-{CUDA_VISIBLE_DEVICES}.pkl", "wb") as f:
-                pickle.dump(search, f)
+        with open(OUT / "dampersearch" / f"search-{damper}-{i}-{CUDA_VISIBLE_DEVICES}.pkl", "wb") as f:
+            pickle.dump(search, f)
