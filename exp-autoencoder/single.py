@@ -1,173 +1,259 @@
-"""
-Usage:
-    python single.py [ident]
 
-``ident`` might be used with this script:
+""""
+TODO:
 
-    (shell 0) $ CUDA_VISIBLE_DEVICES=0 python single.py 0
-    (shell 1) $ CUDA_VISIBLE_DEVICES=1 python single.py 1
+- [ ] write out proper train/test split. Do validation split in this script.
 
 """
-from copy import deepcopy
-from typing import Dict, Any
+
 from pathlib import Path
 import sys
+from typing import Optional, Dict, Any
 import pickle
+from copy import deepcopy
+import json
+import itertools
+from time import time
+import os
 
-DIR = Path(__file__).absolute().parent
-sys.path.append(str(DIR.parent))
-
-import numpy as np
 import torch
-import msgpack
-from sklearn.model_selection import RandomizedSearchCV
+import torch.nn as nn
+from torch.utils.data import TensorDataset
+import torch.nn.functional as F
+import numpy as np
+import pandas as pd
 from sklearn.base import BaseEstimator
 from scipy.stats import loguniform, uniform
-
-# assert torch.cuda.is_available()
+from sklearn.model_selection import RandomizedSearchCV
 
 import train
-import adadamp
+print(train.__file__)
 
+CUDA_VISIBLE_DEVICES = int(os.environ.get("CUDA_VISIBLE_DEVICES", "0"))
+print(f"{CUDA_VISIBLE_DEVICES=}")
 
 DIR = Path(__file__).absolute().parent
+DS_DIR = DIR / "dataset"
 OUT = DIR / "data-tuning"
-if not OUT.exists():
-    OUT.mkdir(exist_ok=True, parents=True)
+sys.path.extend([str(DIR.parent), str(DIR.parent / "train")])
 
 def md5(x: Any) -> str:
-    from hashlib import md5 as _md5
-
-    return _md5(pickle.dumps(x)).hexdigest()
-
-class Model(BaseEstimator):
-    def __init__(self,
-        damper,
-        dataset="autoencoder",
-        cuda=True,
-        ident=0,
-        tuning=True,  # tuning hyperparameters?
-        epochs=6,
-        random_state=42,
-        init_seed=42,
-        lr=0.01,
-        verbose=1,
-        nesterov=True,
-        dwell=1,
-        momentum=0.95,
-        weight_decay=1e-6,
-        rho=0.9,
-        initial_batch_size=32,
-        max_batch_size=None,
-        dampingdelay=5,
-        dampingfactor=5,
-        **kwargs,
-    ):
-        self.damper = damper
-
-        self.dataset = dataset
-        self.cuda = cuda
-        self.random_state = random_state
-        self.init_seed = init_seed
-        self.damper = damper
-        self.epochs = epochs
-        self.lr = lr
-        self.verbose = verbose
-        self.nesterov = nesterov
-        self.dwell = dwell
-        self.momentum = momentum
-        self.weight_decay = weight_decay
-        self.rho = rho
-        self.tuning = tuning
-        self.initial_batch_size=initial_batch_size
-        self.max_batch_size=max_batch_size
-        self.ident = ident
-        self.dampingfactor = dampingfactor
-        self.dampingdelay = dampingdelay
-        for k, v in kwargs.items():
-            setattr(self, k, v)
-
-    def fit(self, *args):
-        params = self.get_params()
-        _params_ordered = tuple(sorted((k, v) for k, v in params.items()))
-        self.ident_ = md5(_params_ordered)
-        for k in ["damper", "ident"]:
-            params.pop(k, None)
-
-        data_test, data_train, model, test_set = train.main(**params)
-        self.stats_ = data_test[-1]
-
-        # save model
-        model = model.to(torch.device("cpu"))
-        torch.save(model.state_dict(), OUT / f"model-{damper}-{self.ident_}.pt")
-
-        # save datasets
-        with open(OUT / f"stats-{damper}-{self.ident_}.pkl", "wb") as f:
-            pickle.dump(
-                {
-                    "data_test": data_test,
-                    "data_train": data_train,
-                    "test_set": test_set,
-                    "params": {"damper": damper, **params},
-                    "ident_": self.ident_,
-                    "stats_": self.stats_,
-                },
-                f,
-            )
-        return self
-
-
-    def score(self, *args):
-        return -1 * self.stats_["test_loss"]  # actually validation loss since self.tuning = 1
-
-def ints(a, b):
-    return list(range(a, b + 1))
+    import hashlib
+    result = hashlib.md5(str(x).encode("ascii"))
+    return result.digest().hex()
 
 def loguniform_m1(a, b, n=10_000, random_state=42):
     a, b = min(a, b), max(a, b)
     x = loguniform(a, b).rvs(size=n, random_state=random_state)
     return (1 - x).tolist()
 
+def ints(a, b):
+    return list(range(a, b + 1))
+
+class Wrapper(BaseEstimator):
+    def __init__(self,
+        tuning: int = 1,
+        epochs=200,
+        verbose=1,
+        seed=5968,
+        *,
+        lr=1e-2,
+        initial_batch_size=32,
+        max_batch_size=256,
+        momentum=0.99,
+        damper="adagrad",
+        dampingdelay=20,
+        dampingfactor=5,
+        rho=0.99,
+        dwell=5,
+        weight_decay=0.005,
+        nesterov=True,
+        noisy=False,
+        reduction="mean",
+        wait: int = 10,
+        growth_rate=1e-3,
+    ):
+        self.verbose = verbose
+        self.epochs = epochs
+        self.tuning = tuning
+        self.seed = seed
+
+        self.damper = damper
+        self.lr = lr
+        self.initial_batch_size = initial_batch_size
+        self.max_batch_size = max_batch_size
+        self.momentum = momentum
+        self.dampingdelay = dampingdelay
+        self.dampingfactor = dampingfactor
+        self.rho = rho
+        self.dwell = dwell
+        self.weight_decay = weight_decay
+        self.nesterov = nesterov
+        self.noisy = noisy
+        self.reduction = reduction
+        self.wait = wait
+        self.growth_rate = growth_rate
+
+    def fit(self, X=None, y=None):
+        params = {
+            k: v
+            for k, v in self.get_params().items()
+            if k not in ['X_test', 'X_train', 'model', 'seed', 'verbose', 'y_test', 'y_train', 'tuning', 'write']
+        }
+        params2 = [(k, params[k]) for k in sorted(list(params.keys()))]
+        #ident = md5(tuple(clean(params2)))
+        seed = 1 + int(np.unique(np.asarray(X).flatten())[0])
+        ident = "-".join(
+            f"{k[:3]}={v:0.6e}" if isinstance(v, float) else f"{k[:3]}={v}"
+            for k, v in clean(params2)
+        )
+        #ident = f"{params['damper']}-tune"
+        fname = f"{ident}-{seed}-{CUDA_VISIBLE_DEVICES}.pkl.zip"
+
+        kwargs = params
+        if "damplr" in kwargs["damper"] or "dampnnlr" in kwargs["damper"]:
+            kwargs["damper"] = kwargs["damper"][:-2]
+            kwargs["max_batch_size"] = self.initial_batch_size
+
+        out_dir = OUT / "dampersweep"
+        if out_dir / fname in out_dir.iterdir():
+            print(f"Skipping {fname}, already in directory", flush=True)
+            self.df_ = pd.read_pickle(out_dir / fname)
+            return self
+
+        start = time()
+        try:
+            data, train_data, model, test_set = train.main(
+                dataset="autoencoder",
+                model=None,
+                tuning=self.tuning + seed,
+                test_freq=1,
+                cuda=True,
+                random_state=self.seed,
+                init_seed=self.seed,
+                verbose=self.verbose,
+                **kwargs,
+            )
+            self.data_ = data
+            self.model_ = model
+            self.train_data_ = train_data
+        except Exception as e:
+            import logging
+            logging.exception(e)
+            return self
+        print(f"    took {(time() - start) / 60:0.1f}min", flush=True)
+        pd.DataFrame(data).to_pickle(out_dir / fname)
+        df = pd.DataFrame(data)
+        df.to_pickle(out_dir / fname)
+        self.df_ = df
+        return self
+
+    def score(self, *args, **kwargs):
+        return -1 * self.df_.iloc[-1]["test_loss"]
+
+def clean(x):
+    if isinstance(x, list):
+        return [clean(i) for i in x]
+    if isinstance(x, tuple):
+        return tuple([clean(i) for i in x])
+    if isinstance(x, dict):
+        return {k: clean(v) for k, v in x.items()}
+    if isinstance(x, (np.int32, np.int64, np.float64, np.float32)):
+        return x.item()
+    if isinstance(x, np.ndarray):
+        return x.tolist()
+    return x
+
 if __name__ == "__main__":
-    args = sys.argv[1:]
-    print(sys.argv)
-    ident = int(args[0]) if len(args) else 0
 
     base_search_space = {
-        "lr": loguniform(1e-5, 1e-1),
-        "initial_batch_size": [16, 32, 64, 96, 128, 160, 192, 224, 256],
-        "max_batch_size": [None]*3 + [256, 512, 1024, 2048, 4096, 8192, 16384],
-        "dwell": [1, 2, 5, 10, 20, 50],
-        "weight_decay": loguniform(1e-8, 1e-4),
+        "lr": loguniform(1e-4, 1e-1),
+        "initial_batch_size": [2**i for i in range(4, 9 + 1)],
+        "max_batch_size": [2**i for i in range(7, 13 + 1)],
+        "dwell": loguniform(1, 1e3),
+        "wait": loguniform(1, 1e3),
+        "weight_decay": loguniform(1e-7, 1e-4),
         "momentum": loguniform_m1(1e-1, 1e-3),
+        "nesterov": [True],
     }
+    static_ibs = [2**i for i in range(5, 9 + 1)]
     damper_search_space: Dict[str, Dict[str, Any]] = {
-        "adadamp": {},
-        "geodamp": {"dampingdelay": ints(1, 10), "dampingfactor": ints(1, 21)},
-        "radadamp": {"rho": loguniform_m1(1e-5, 1e-1)},
-        "adagrad": {"lr": loguniform(1e-3, 1e-1)},
+        "adagrad": {
+            "lr": loguniform(1e-3, 1e-1),
+            "initial_batch_size": static_ibs,
+        },
+        "adamw": {
+            "lr": loguniform(1e-3, 1e-1),
+            "weight_decay": loguniform(1e-3, 1e-1),
+            "initial_batch_size": static_ibs,
+        },
+        "nadam": {
+            "lr": loguniform(0.5e-3, 1e-2),
+            "initial_batch_size": static_ibs,
+        },
+        "geodamp": {
+            "dampingdelay": ints(1, 10),
+            "dampingfactor": ints(1, 21),
+        },
+        "radadamp": {
+            "reduction": ["min", "mean", "median"],
+            "rho": uniform(0, 0.99),
+            "momentum": loguniform_m1(5e-1, 1e-3),
+        },
+        "padadamp": {
+            "lr": loguniform(0.5e-4, 0.5e-1),
+            "growth_rate": loguniform(1e-3, 1e2),
+            "momentum": loguniform_m1(5e-1, 1e-3),
+        },
     }
+    for damper in ["radadamp", "padadamp", "geodamp"]:
+        damper_search_space[f"{damper}lr"] = damper_search_space[damper]
 
-    # gd use {1384, 786, 1076}M
-    for damper in [
-        "sgd",
-        "radadamp",  # 1391M
-        "adadamp",
-        "gd",  # GPU mem 1378M, 90/300W. 
-        "adagrad",
-        "geodamp",
-        "adadelta",
-    ]:
-        print(f"## Training w/ {damper}")
-        space = deepcopy(base_search_space)
-        space.update(damper_search_space.get(damper, {}))
-        space.update({"damper": [damper]})
+    # LR      |BS      |damper
+    # passive |static  |geodamplr
+    # static  |passive |geodamp
+    # static  |static  |GD, SGD
+    # passive |passive |geodamp (small MBS)
+    # adaptive|static  |adamw
+    # static  |adaptive|radadamp
+    # adaptive|adaptive|adadagrad, radadamp (small MBS)
+    #
+    # adaptive and passive aren't mixed
 
-        # about 794M per job for sgd
-        m = Model(damper, epochs=100, verbose=True, tuning=1, ident=ident)
-        search = RandomizedSearchCV(m, space, n_iter=256, n_jobs=28, refit=False, verbose=3, random_state=42 + int(ident), cv=[([0, 1], [2])])
-        search.fit(np.random.uniform(size=(3, 2)))
+    n_params = 125
+    n_params = 4
+    for i in range(1):
+        for damper in [
+            #"geodamplr",
+            #"geodamp",
+            #"padadamp",
+            #"padadamplr",
+            #"radadamp",
+            #"radadamplr",
+            "adamw",
+            #"nadam",
+            "adagrad",
+            "gd",
+            "sgd",
+        ]:
+            print(f"\n\n## {i}th tuning run for {damper}\n\n")
+            space = deepcopy(base_search_space)
+            space.update(damper_search_space.get(damper, {}))
+            space.update({"damper": [damper]})
 
-        with open(OUT / f"search-{damper}-{ident}.pkl", "wb") as f:
-            pickle.dump(search, f)
-        #main(damper, **param)
+            epochs = 100 if damper != "gd" else 1000
+            epochs = 4
+
+            seeds = 10 + (np.arange(3 * 2) // 2).reshape(3, 2)
+            m = Wrapper(
+                epochs=epochs, verbose=False, tuning=10, damper=damper,
+            )
+            search = RandomizedSearchCV(
+                m, space, n_iter=max(4, n_params // 5), #n_jobs=1,#2 * 2,
+                refit=False, verbose=3,
+                random_state=20 + i + CUDA_VISIBLE_DEVICES, cv=[([0], [1, 2])],
+            )
+            search.fit(seeds.astype(int))
+
+            with open(OUT / "dampersearch" / f"search-{damper}-{i}-{CUDA_VISIBLE_DEVICES}.pkl", "wb") as f:
+                pickle.dump(search, f)
