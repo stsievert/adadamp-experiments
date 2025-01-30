@@ -100,6 +100,7 @@ class Wrapper(BaseEstimator):
             for k, v in self.get_params().items()
             if k not in ['X_test', 'X_train', 'model', 'seed', 'verbose', 'y_test', 'y_train', 'tuning', 'write']
         }
+        params_keep = deepcopy(params)
         params2 = [(k, params[k]) for k in sorted(list(params.keys()))]
         #ident = md5(tuple(clean(params2)))
         seed = 1 + int(np.unique(np.asarray(X).flatten())[0])
@@ -141,9 +142,10 @@ class Wrapper(BaseEstimator):
             import logging
             logging.exception(e)
             return self
-        print(f"    took {(time() - start) / 60:0.1f}min", flush=True)
+        print(f"    took {(time() - start) / 60:0.1f}min for {self.epochs} epochs", flush=True)
         pd.DataFrame(data).to_pickle(out_dir / fname)
         df = pd.DataFrame(data)
+        df["params_keep"] = params_keep
         df.to_pickle(out_dir / fname)
         self.df_ = df
         return self
@@ -199,6 +201,7 @@ if __name__ == "__main__":
             "lr": loguniform(1e-5, 0.5e-3),
             "dwell": [1],
             "wait": [1],
+            "initial_batch_size": [2**i for i in range(4, 6 + 1)],
         },
         "geodamplr": {
             "dampingdelay": ints(10, 20),
@@ -260,31 +263,41 @@ if __name__ == "__main__":
         #"gd",
         #"sgd",
     ]
-    if CUDA_VISIBLE_DEVICES:
+    if CUDA_VISIBLE_DEVICES % 2 == 0:
         print(CUDA_VISIBLE_DEVICES, type(CUDA_VISIBLE_DEVICES))
-        print("Switchign damper order...", end=" ")
+        print("Reversing damper order...", end=" ")
         dampers = dampers[::-1]
         print(dampers)
+
+    params = []
+    for damper in dampers:
+        space = deepcopy(base_search_space)
+        space.update(damper_search_space.get(damper, {}))
+        space.update({"damper": [damper]})
+        params.append(space)
+
+    epochs = 100
+    mul = 4
+    n_jobs = 10  # machine specific
+
+    # DEBUG
+    epochs = 5
+    mul = 1
+
     for i in range(100):
-        for damper in dampers:
-            print(f"\n\n## {i}th tuning run for {damper}\n\n")
-            space = deepcopy(base_search_space)
-            space.update(damper_search_space.get(damper, {}))
-            space.update({"damper": [damper]})
+        print(f"\n\n## {i}th tuning run for {damper}\n\n")
 
-            epochs = 100 if damper != "gd" else 1000
+        m = Wrapper(
+            epochs=epochs, verbose=False, tuning=13, damper=damper,
+        )
+        n_jobs = 10
+        search = RandomizedSearchCV(
+            m, params, n_iter=mul * n_jobs, n_jobs=n_jobs,
+            refit=False, verbose=3,
+            random_state=1010 + 100*i + CUDA_VISIBLE_DEVICES, cv=[([0], [1, 2])],
+        )
+        seeds = 200 + (np.arange(3 * 2) // 2).reshape(3, 2)
+        search.fit(seeds.astype(int))
 
-            seeds = 200 + (np.arange(3 * 2) // 2).reshape(3, 2)
-            m = Wrapper(
-                epochs=epochs, verbose=False, tuning=13, damper=damper,
-            )
-            n_jobs = 10
-            search = RandomizedSearchCV(
-                m, space, n_iter=n_jobs, n_jobs=n_jobs,
-                refit=False, verbose=3,
-                random_state=1000 + 10*i + CUDA_VISIBLE_DEVICES, cv=[([0], [1, 2])],
-            )
-            search.fit(seeds.astype(int))
-
-            with open(OUT / "dampersearch" / f"search-{damper}-{i}-{CUDA_VISIBLE_DEVICES}.pkl", "wb") as f:
-                pickle.dump(search, f)
+        with open(OUT / "dampersearch" / f"search-{i}-{CUDA_VISIBLE_DEVICES}.pkl", "wb") as f:
+            pickle.dump(search, f)
