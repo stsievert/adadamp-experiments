@@ -116,10 +116,10 @@ class Wrapper(BaseEstimator):
             kwargs["max_batch_size"] = self.initial_batch_size
 
         out_dir = OUT / "dampersweep"
-        if out_dir / fname in out_dir.iterdir():
-            print(f"Skipping {fname}, already in directory", flush=True)
-            self.df_ = pd.read_pickle(out_dir / fname)
-            return self
+        #if out_dir / fname in out_dir.iterdir():
+        #    print(f"Skipping {fname}, already in directory", flush=True)
+        #    self.df_ = pd.read_pickle(out_dir / fname)
+        #    return self
 
         start = time()
         try:
@@ -166,11 +166,11 @@ def clean(x):
 
 if __name__ == "__main__":
     base_search_space = {
-        "lr": loguniform(1e-4, 1e-2),
+        "lr": loguniform(0.5e-4, 5e-3),
         "initial_batch_size": [2**i for i in range(4, 9 + 1)],
         "max_batch_size": [2**i for i in range(7, 13 + 1)],
         "dwell": loguniform(1, 1e3),
-        "wait": loguniform(1, 1e3),
+        "wait": loguniform(1, 1e2),
         "weight_decay": loguniform(1e-7, 1e-4),
         "momentum": loguniform_m1(1e-1, 1e-3),
         "nesterov": [True],
@@ -199,13 +199,13 @@ if __name__ == "__main__":
         },
         "radadamp": {
             "reduction": ["min", "mean"], # "median"],
-            "rho": uniform(rv_bounds(low=0.2, high=0.99)),
-            "momentum": uniform(rv_bounds(low=0.5, high=0.999)),
+            "rho": uniform(*rv_bounds(low=0.2, high=0.99)),
+            "momentum": uniform(*rv_bounds(low=0.5, high=0.99)),
         },
         "padadamp": {
-            "lr": loguniform(0.5e-4, 1e-2),
-            "growth_rate": loguniform(1e-3, 1e2),
-            "momentum": uniform(rv_bounds(low=0.5, high=0.999)),
+            "lr": loguniform(0.5e-4, 0.5e-2),
+            "growth_rate": loguniform(1e-2, 1e2),
+            "momentum": uniform(*rv_bounds(low=0.5, high=0.99)),
         },
         "nadam": {
             "lr": loguniform(0.5e-3, 10e-3),
@@ -226,37 +226,42 @@ if __name__ == "__main__":
     # adaptive and passive aren't mixed
 
     dampers = [
+        "adamw",
         "geodamp",
         "padadamp",
         "radadamp",
         "geodamplr",
-        "adamw",
         "adagrad",
         "padadamplr",
         "radadamplr",
         #"gd",
         #"sgd",
     ]
-    damper = dampers[CUDA_VISIBLE_DEVICES]
+    if CUDA_VISIBLE_DEVICES:
+        print(CUDA_VISIBLE_DEVICES, type(CUDA_VISIBLE_DEVICES))
+        print("Switchign damper order...", end=" ")
+        dampers = dampers[::-1]
+        print(dampers)
     for i in range(100):
-        print(f"\n\n## {i}th tuning run for {damper}\n\n")
-        space = deepcopy(base_search_space)
-        space.update(damper_search_space.get(damper, {}))
-        space.update({"damper": [damper]})
+        for damper in dampers:
+            print(f"\n\n## {i}th tuning run for {damper}\n\n")
+            space = deepcopy(base_search_space)
+            space.update(damper_search_space.get(damper, {}))
+            space.update({"damper": [damper]})
 
-        epochs = 100 if damper != "gd" else 1000
+            epochs = 100 if damper != "gd" else 1000
 
-        seeds = 100 + (np.arange(3 * 2) // 2).reshape(3, 2)
-        m = Wrapper(
-            epochs=epochs, verbose=False, tuning=11, damper=damper,
-        )
-        n_jobs = 4
-        search = RandomizedSearchCV(
-            m, space, n_iter=2 * n_jobs, n_jobs=n_jobs,
-            refit=False, verbose=3,
-            random_state=100 + i + CUDA_VISIBLE_DEVICES, cv=[([0], [1, 2])],
-        )
-        search.fit(seeds.astype(int))
+            seeds = 200 + (np.arange(3 * 2) // 2).reshape(3, 2)
+            m = Wrapper(
+                epochs=epochs, verbose=False, tuning=13, damper=damper,
+            )
+            n_jobs = 10
+            search = RandomizedSearchCV(
+                m, space, n_iter=n_jobs, n_jobs=n_jobs,
+                refit=False, verbose=3,
+                random_state=1000 + 10*i + CUDA_VISIBLE_DEVICES, cv=[([0], [1, 2])],
+            )
+            search.fit(seeds.astype(int))
 
-        with open(OUT / "dampersearch" / f"search-{damper}-{i}-{CUDA_VISIBLE_DEVICES}.pkl", "wb") as f:
-            pickle.dump(search, f)
+            with open(OUT / "dampersearch" / f"search-{damper}-{i}-{CUDA_VISIBLE_DEVICES}.pkl", "wb") as f:
+                pickle.dump(search, f)
