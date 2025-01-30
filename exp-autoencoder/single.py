@@ -166,8 +166,8 @@ def clean(x):
 
 if __name__ == "__main__":
     base_search_space = {
-        "lr": loguniform(0.5e-4, 5e-3),
-        "initial_batch_size": [2**i for i in range(4, 9 + 1)],
+        "lr": loguniform(0.7e-5, 2e-3),
+        "initial_batch_size": [2**i for i in range(4, 7 + 1)],
         "max_batch_size": [2**i for i in range(7, 13 + 1)],
         "dwell": loguniform(1, 1e3),
         "wait": loguniform(1, 1e2),
@@ -181,12 +181,12 @@ if __name__ == "__main__":
         return low, high - low
     damper_search_space: Dict[str, Dict[str, Any]] = {
         "adagrad": {
-            "lr": loguniform(1e-4, 1e-2),
+            "lr": loguniform(1e-4, 4e-3),
             "initial_batch_size": static_ibs,
         },
         "adamw": {
-            "lr": loguniform(1e-3, 1e-1),
-            "weight_decay": loguniform(1e-3, 1e-1),
+            "lr": loguniform(1e-4, 4e-3),
+            "weight_decay": loguniform(1e-4, 1e-1),
             "initial_batch_size": static_ibs,
         },
         "nadam": {
@@ -195,24 +195,47 @@ if __name__ == "__main__":
         },
         "geodamp": {
             "dampingdelay": ints(10, 20),
-            "dampingfactor": ints(2, 5),
+            "dampingfactor": loguniform(2, 5),
+            "lr": loguniform(1e-5, 0.5e-3),
+            "dwell": [1],
+            "wait": [1],
+        },
+        "geodamplr": {
+            "dampingdelay": ints(10, 20),
+            "dampingfactor": loguniform(2, 5),
+            "lr": loguniform(1e-5, 0.5e-3),
+            "dwell": [1],
+            "wait": [1],
         },
         "radadamp": {
             "reduction": ["min", "mean"], # "median"],
-            "rho": uniform(*rv_bounds(low=0.2, high=0.99)),
-            "momentum": uniform(*rv_bounds(low=0.5, high=0.99)),
+            "rho": uniform(*rv_bounds(low=0.3, high=0.9)),
+            "momentum": uniform(*rv_bounds(low=0.4, high=0.99)),
+            "lr": loguniform(1e-5, 3e-4),
+            "dwell": loguniform(1, 1e4),
+        },
+        "radadamplr": {
+            "dwell": loguniform(1, 1e4),
+            "reduction": ["min", "mean"], # "median"],
+            "rho": uniform(*rv_bounds(low=0.5, high=0.9)),
+            "momentum": uniform(*rv_bounds(low=0.4, high=0.99)),
+            "lr": loguniform(1e-5, 5e-4),
+            "weight_decay": loguniform(0.5e-6, 3e-5),
         },
         "padadamp": {
-            "lr": loguniform(0.5e-4, 0.5e-2),
-            "growth_rate": loguniform(1e-2, 1e2),
+            "lr": loguniform(0.5e-5, 3e-4),
+            "growth_rate": loguniform(1e-3, 1e2),
             "momentum": uniform(*rv_bounds(low=0.5, high=0.99)),
+            "weight_decay": loguniform(0.5e-7, 3e-5),
         },
-        "nadam": {
-            "lr": loguniform(0.5e-3, 10e-3),
+        "padadamplr": {
+            "lr": loguniform(1e-5, 2e-3),
+            "growth_rate": loguniform(1e-3, 2e-1),
+            "momentum": uniform(*rv_bounds(low=0.5, high=0.99)),
+            "weight_decay": loguniform(1e-7, 1e-4),
+            "dwell": loguniform(10, 1e4),
         },
     }
-    for damper in ["radadamp", "padadamp", "geodamp"]:
-        damper_search_space[f"{damper}lr"] = damper_search_space[damper]
 
     # LR      |BS      |damper
     # passive |static  |geodamplr
