@@ -508,7 +508,7 @@ def main(
         test_set=test_set,
         args=args,
         test_freq=test_freq,
-        train_stats=True,#dataset == "synthetic",
+        train_stats=False,#dataset == "synthetic",
         verbose=verbose,
         device=_device,
     )
