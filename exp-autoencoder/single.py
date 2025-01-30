@@ -15,6 +15,7 @@ import json
 import itertools
 from time import time
 import os
+import random
 
 import torch
 import torch.nn as nn
@@ -281,20 +282,20 @@ if __name__ == "__main__":
     n_jobs = 10  # machine specific
 
     # DEBUG
-    epochs = 5
+    epochs = 2
     mul = 1
 
     for i in range(100):
         print(f"\n\n## {i}th tuning run for {damper}\n\n")
 
         m = Wrapper(
-            epochs=epochs, verbose=False, tuning=13, damper=damper,
+            epochs=epochs, verbose=True, tuning=13, damper=damper,
         )
         n_jobs = 10
         search = RandomizedSearchCV(
             m, params, n_iter=mul * n_jobs, n_jobs=n_jobs,
-            refit=False, verbose=3,
-            random_state=1010 + 100*i + CUDA_VISIBLE_DEVICES, cv=[([0], [1, 2])],
+            refit=False, verbose=3, pre_dispatch=n_jobs,
+            random_state=4010 + 100*i + CUDA_VISIBLE_DEVICES, cv=[([0], [1, 2])],
         )
         seeds = 200 + (np.arange(3 * 2) // 2).reshape(3, 2)
         search.fit(seeds.astype(int))
