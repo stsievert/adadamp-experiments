@@ -261,6 +261,7 @@ def main(
     reduction = "mean",
     wait: int = 10,
     growth_rate=1e-3,
+    min_batch_size:int=0,
 ) -> Tuple[List[Dict], List[Dict], nn.Module, Dataset]:
     # Get (tuning, random_state, init_seed)
     assert int(tuning) or isinstance(tuning, bool)
@@ -299,6 +300,7 @@ def main(
         "reduction": reduction,
         "wait": wait,
         "growth_rate": growth_rate,
+        "min_batch_size": min_batch_size,
     }
 
     no_cuda = not cuda
@@ -385,8 +387,6 @@ def main(
         test_set = Images(
             _dir, split="test", transform=v2.Compose(transform_test), download=True
         )
-        # TODO: change to ResNet18 VAE
-        #model = Autoencoder(32, 100, num_input_channels=3)
     elif train_data is not None and test_data is not None:
         train_set = TensorDataset(*train_data)
         test_set = TensorDataset(*test_data)
@@ -451,23 +451,30 @@ def main(
             growth_rate=args["growth_rate"],
             **opt_kwargs,
         )
-    elif args["damper"].lower() == "pradadamp":
-        opt = PrAdaDamp(
-            *opt_args,
-            reduction=args["reduction"],
-            rho=args["rho"],
-            wait=args["wait"],
-            **opt_kwargs,
-        )
-    elif args["damper"].lower() == "adadampnn":
-        opt = AdaDampNN(
-            *opt_args,
-            #dwell=args["dwell"],  # already in opt_kwargs
-            noisy=args["noisy"],
-            **opt_kwargs,
-        )
+    #elif args["damper"].lower() == "pradadamp":
+    #    opt = PrAdaDamp(
+    #        *opt_args,
+    #        reduction=args["reduction"],
+    #        rho=args["rho"],
+    #        wait=args["wait"],
+    #        min_batch_size=args["min_batch_size"],
+    #        **opt_kwargs,
+    #    )
+    #elif args["damper"].lower() == "adadampnn":
+    #    opt = AdaDampNN(
+    #        *opt_args,
+    #        #dwell=args["dwell"],  # already in opt_kwargs
+    #        noisy=args["noisy"],
+    #        **opt_kwargs,
+    #    )
     elif args["damper"].lower() == "radadamp":
-        opt = RadaDamp(*opt_args, rho=rho, **opt_kwargs)
+        opt = RadaDamp(
+            *opt_args,
+            rho=args["rho"],
+            reduction=args["reduction"],
+            min_batch_size=args["min_batch_size"],
+            **opt_kwargs
+        )
     elif args["damper"].lower() == "geodamp":
         opt = GeoDamp(
             *opt_args,

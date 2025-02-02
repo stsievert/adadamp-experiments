@@ -73,6 +73,7 @@ class Wrapper(BaseEstimator):
         reduction="mean",
         wait: int = 10,
         growth_rate=1e-3,
+        min_batch_size: int=0,
     ):
         self.verbose = verbose
         self.epochs = epochs
@@ -94,6 +95,7 @@ class Wrapper(BaseEstimator):
         self.reduction = reduction
         self.wait = wait
         self.growth_rate = growth_rate
+        self.min_batch_size = min_batch_size
 
     def fit(self, X=None, y=None):
         params = {
@@ -240,6 +242,24 @@ if __name__ == "__main__":
             "dwell": loguniform(10, 1e4),
         },
     }
+    damper_search_space["radadamp"].update({
+        "rho": uniform(*rv_bounds(low=0.0, high=0.99)),
+        "momentum": uniform(*rv_bounds(low=0.0, high=0.99)),
+        "min_batch_size": [0, 1, 2, 4, 8, 16],
+    })
+    damper_search_space["radadamplr"].update({
+        "rho": uniform(*rv_bounds(low=0.0, high=0.99)),
+        "momentum": uniform(*rv_bounds(low=0.0, high=0.99)),
+        "min_batch_size": [0, 1, 2, 4, 8, 16],
+    })
+    damper_search_space["padadamp"].update({
+        "momentum": uniform(*rv_bounds(low=0.0, high=0.99)),
+        "growth_rate": loguniform(1e-4, 1e0),
+    })
+    damper_search_space["padadamplr"].update({
+        "growth_rate": loguniform(1e-3, 1e0),
+        "dwell": loguniform(10, 20e4),
+    })
 
     # LR      |BS      |damper
     # passive |static  |geodamplr
@@ -253,12 +273,12 @@ if __name__ == "__main__":
     # adaptive and passive aren't mixed
 
     dampers = [
-        "adamw",
-        "geodamp",
+        #"adamw",
+        #"geodamp",
         "padadamp",
         "radadamp",
-        "geodamplr",
-        "adagrad",
+        #"geodamplr",
+        #"adagrad",
         "padadamplr",
         "radadamplr",
         #"gd",
@@ -281,21 +301,16 @@ if __name__ == "__main__":
     mul = 4
     n_jobs = 10  # machine specific
 
-    # DEBUG
-    epochs = 2
-    mul = 1
-
     for i in range(100):
-        print(f"\n\n## {i}th tuning run for {damper}\n\n")
+        print(f"\n\n## {i}th tuning run\n\n")
 
         m = Wrapper(
-            epochs=epochs, verbose=True, tuning=13, damper=damper,
+            epochs=epochs, verbose=False, tuning=13, damper=damper,
         )
-        n_jobs = 10
         search = RandomizedSearchCV(
             m, params, n_iter=mul * n_jobs, n_jobs=n_jobs,
             refit=False, verbose=3, pre_dispatch=n_jobs,
-            random_state=4010 + 100*i + CUDA_VISIBLE_DEVICES, cv=[([0], [1, 2])],
+            random_state=6050 + 100*i + CUDA_VISIBLE_DEVICES, cv=[([0], [1, 2])],
         )
         seeds = 200 + (np.arange(3 * 2) // 2).reshape(3, 2)
         search.fit(seeds.astype(int))
