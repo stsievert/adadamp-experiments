@@ -373,7 +373,8 @@ def main(
             v2.RandomHorizontalFlip(),
             v2.RandomVerticalFlip(),
             v2.ToDtype(torch.float32, scale=True),
-            v2.AutoAugment(v2.AutoAugmentPolicy.SVHN),
+            #v2.GaussianNoise(sigma=0.01),
+            #v2.AutoAugment(v2.AutoAugmentPolicy.SVHN),
         ]
         transform_test = [
             v2.ToImage(),
